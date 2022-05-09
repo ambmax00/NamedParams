@@ -20,7 +20,12 @@ int main(int argc, char** argv)
   KeyGen gen(&foo);
 
   int ret = gen(pa = 2, pb = c);
+  
+  // correct result
   res += (ret == 7) ? 0 : 1;
+
+  // correct reference
+  res += (c == 5) ? 0 : 1;
 
   return res;
 

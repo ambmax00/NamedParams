@@ -221,16 +221,16 @@ class KeyGen
     template <class... KeyTypePack>
     typename KeyFunctionTraits::ResultType operator()(KeyTypePack... _args)
     {
-      std::array<Any,sizeof...(_args)> arr = {std::move(_args)...};
+      std::tuple<KeyTypePack...> arr = std::make_tuple(std::move(_args)...);
       return internal(arr, std::make_index_sequence<sizeof...(_args)>{});
     }
 
-    template <size_t nbArgs, size_t... Is>
+    template <class... KeyTypePack, size_t... Is>
     typename KeyFunctionTraits::ResultType 
-    internal(std::array<Any,nbArgs>& arr, std::index_sequence<Is...> const &)
+    internal(std::tuple<KeyTypePack...>& arr, std::index_sequence<Is...> const &)
     {
       return m_baseFunction(
-          any_cast<typename KeyFunctionTraits::arg<Is>::type>(arr[Is])...);
+          any_cast<typename KeyFunctionTraits::arg<Is>::type>(std::get<Is>(arr))...);
     }
 
 };
