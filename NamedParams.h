@@ -1,14 +1,33 @@
 #ifndef NAMED_PARAMS_H
 #define NAMED_PARAMS_H
 
-#include <any>
+#include <array>
 #include <cstring>
 #include <iostream>
 #include <functional>
+#include <numeric>
 #include <tuple>
 #include <typeindex>
 #include <vector>
 #include <utility>
+
+using id_value = const int *;
+
+template <class T>
+struct unique_id {
+  static constexpr int value = 0;
+  constexpr unique_id(T const &) {}
+  constexpr operator id_value() const { return &value; }
+};
+
+/**
+    The following is one of the base of this hack!
+    This works because the conversion from unique_id to bool is delayed,
+    therefore the lambda is a new one at each instantiation of a template
+   depending on that non-type template which leads to 'name' to have a different
+   value at each deduction
+*/
+#define FORCE_UNIQUE(name...) id_value name = unique_id([] {})
 
 template <class T>
 struct IsOptional : public std::false_type {};
@@ -16,56 +35,90 @@ struct IsOptional : public std::false_type {};
 template <class T>
 struct IsOptional<std::optional<T>> : public std::true_type {};
 
-class Any
+template <class T, int N>
+class Key;
+
+template <class T>
+struct IsKey : public std::false_type {};
+
+template <class T, int N>
+struct IsKey<Key<T,N>> : public std::true_type {};
+
+template <class KeyType>
+class AssignedKey
 {
   private:
 
     uint8_t* m_pStorage;
     std::type_index* m_pTypeIndex;
     bool m_isReference;
+    int m_keyID;
 
-    Any(uint8_t* _pStorage, std::type_index* _pTypeIndex, bool _isReference)
+  public:
+
+    AssignedKey() = delete;
+
+    AssignedKey(uint8_t* _pStorage, std::type_index* _pTypeIndex, bool _isReference, int _keyID)
       : m_pStorage(_pStorage)
       , m_pTypeIndex(_pTypeIndex)
       , m_isReference(_isReference)
+      , m_keyID(_keyID)
     {
       //std::cout << "KEY NR: " << m_keyID << std::endl;
     }
 
-  public:
-
-    Any() = delete;
-
     template <class T, std::enable_if_t<std::is_reference<T>::value, int> = 0>
-    static Any build(T _any)
+    static AssignedKey build(T _any)
     {
       std::cout << "INIT REF " << std::endl;
-      return Any(reinterpret_cast<uint8_t*>(&_any), new std::type_index(typeid(T)), true);
+      return AssignedKey(reinterpret_cast<uint8_t*>(&_any), new std::type_index(typeid(T)), true, KeyType::ID);
     }
 
     template <class T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
-    static Any build(T _any)
+    static AssignedKey build(T _any)
     {
       std::cout << "INIT NON-REF " << std::endl;
       auto pStorage = new uint8_t[sizeof(T)];
       auto pTypeIndex = new std::type_index(typeid(T));
       std::memcpy(pStorage, &_any, sizeof(T));
 
-      return Any(pStorage, pTypeIndex, false);
+      return AssignedKey(pStorage, pTypeIndex, false, KeyType::ID);
     }
 
-    Any(const Any& _key) = delete;
+    AssignedKey(const AssignedKey& _key) = delete;
 
-    Any(Any&& _input)
+    AssignedKey(AssignedKey&& _input)
     {
       m_pStorage = _input.m_pStorage;
       m_pTypeIndex = _input.m_pTypeIndex;
       m_isReference = _input.m_isReference;
+      m_keyID = _input.m_keyID;
       _input.m_pStorage = nullptr;
       _input.m_pTypeIndex = nullptr;
     }
 
-    ~Any()
+    AssignedKey& operator=(const AssignedKey& _input) = delete;
+
+    AssignedKey& operator=(AssignedKey&& _input) 
+    {
+      m_pStorage = _input.m_pStorage;
+      m_pTypeIndex = _input.m_pTypeIndex;
+      m_isReference = _input.m_isReference;
+      m_keyID = _input.m_keyID;
+      _input.m_pStorage = nullptr;
+      _input.m_pTypeIndex = nullptr;
+      return *this;
+    }
+
+    AssignedKey<void> moveToVoid() 
+    {
+      AssignedKey<void> out(m_pStorage, m_pTypeIndex, m_isReference, m_keyID);
+      m_pStorage = nullptr;
+      m_pTypeIndex = nullptr;
+      return out;
+    }
+
+    ~AssignedKey()
     {
       if (m_isReference)
       {
@@ -86,7 +139,6 @@ class Any
       {
         delete m_pTypeIndex;
       }
-
     }
 
     uint8_t* getStorage() 
@@ -94,20 +146,26 @@ class Any
       return m_pStorage;
     }
 
-    const std::type_index* getTypeIndex()
+    const std::type_index* getTypeIndex() const 
     {
       return m_pTypeIndex;
     }
 
-    /*const int getKeyID()
+    int getKeyID() const
     {
       return m_keyID;
-    }*/
+    }
+
+    typedef KeyType Type;
+
+    //template <typename OtherKeyType>
+    //friend class AssignedKey;
+
 
 };
 
-template <typename T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
-T any_cast(Any& _any)
+template <typename T, class KeyType, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
+T any_cast(AssignedKey<KeyType>& _any)
 {
   const std::type_index castType = typeid(T);
   if (castType != *_any.getTypeIndex())
@@ -122,8 +180,8 @@ T any_cast(Any& _any)
   return out;
 }
 
-template <typename T, std::enable_if_t<std::is_reference<T>::value, bool> = true>
-T any_cast(Any& _any)
+template <typename T, class KeyType, std::enable_if_t<std::is_reference<T>::value, bool> = true>
+T any_cast(AssignedKey<KeyType>& _any)
 {
   const std::type_index castType = typeid(T);
   if (castType != *_any.getTypeIndex())
@@ -138,41 +196,64 @@ T any_cast(Any& _any)
   return out;
 }
 
-#if 0
-class KeyCounter 
-{
-  private:
-    static inline int m_globalKeyIndex = 0;
-
-  public:
-    static const int getKeyID()
-    {
-      return m_globalKeyIndex++;
-    }
-}
-#endif
-
-template <typename T>
+template <typename T, int UNIQUE_ID> //FORCE_UNIQUE(UNIQUE_ID)>
 class Key
 {
   private:
-    //m_keyID; 
 
   public:
-    constexpr Key() {} //: m_keyID(KeyCounter::getKeyID()) {}
+    consteval Key() {}
 
     Key(const Key& _other) = delete;
 
     Key(Key&& _other) = delete;
 
-    constexpr Any operator=(T _any) const 
+    auto operator=(T _any) const
     {
       //std::cout << "TYPE: " << std::is_reference<T>::value << " " << std::type_index(typeid(T)).name() << std::endl;
       std::cout << "SHOULD NOT BE CALLED" << std::endl;
-      return Any::build<T>(_any);
+      auto k = AssignedKey<Key>::template build<T>(_any);
+      return k;
     }
 
+    typedef T type;
+
+    static const int ID = UNIQUE_ID;
+
 };
+
+/*
+class Register
+{
+  private:
+
+    const inline static int m_maxGlobalNbKeys = 1000;
+
+    constexpr inline static std::array<int,MAX_GLOBAL_NB_KEYS> m_keys = {};
+
+  public:
+
+    template <class... KeyPack>
+    consteval static std::tuple<const typename KeyPack::idType...> createContext(const KeyPack&... _pack)
+    {
+      constexpr std::tuple<const typename KeyPack::idType...> out = std::make_tuple(_pack.m_keyID...);
+      return out;
+      //return createContext(_pack...);
+    }
+
+    consteval static int createContext()
+    {
+      return Counter<CounterType::KEY>::next();
+    }
+
+    inline static void print()
+    {
+      for (auto a : m_keys) {
+        std::cout << "KEY " << a << std::endl;
+      }
+    }
+    
+};*/
 
 template<typename T> 
 struct FunctionTraits;  
@@ -191,46 +272,67 @@ struct FunctionTraits<std::function<R(Args...)>>
     };
 };
 
-template <typename Func>
+template <typename Func, class... FunctionKeys>
 class KeyGen
 {
   private:
 
     typedef FunctionTraits<std::function<Func>> KeyFunctionTraits;
 
-    template <class... KeyType>
-    typename KeyFunctionTraits::ResultType m_parameterFunction(KeyType... args) 
-    {
-      return 0;
-    }
+    Func* m_baseFunction; 
 
-    std::function<Func> m_baseFunction; 
+    std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
 
   public:
-    KeyGen(Func* _function) : m_baseFunction(_function)
+    KeyGen(Func* _function, const FunctionKeys&... _keys) 
+      : m_baseFunction(_function)
+      //, m_keyIDs({_keys.ID...})
     {
     }
 
     ~KeyGen() {}
 
-    std::function<Func> getBaseFunction()
+    std::function<Func> getBaseFunction() const
     {
       return m_baseFunction;
     }
 
-    template <class... KeyTypePack>
-    typename KeyFunctionTraits::ResultType operator()(KeyTypePack... _args)
+    template <class... AssignedKeyPack>
+    constexpr static inline bool eval()
     {
-      std::tuple<KeyTypePack...> arr = std::make_tuple(std::move(_args)...);
-      return internal(arr, std::make_index_sequence<sizeof...(_args)>{});
+      std::array<int,sizeof...(AssignedKeyPack)> passedKeys = {AssignedKeyPack::Type::ID...};
+      std::array<int,sizeof...(FunctionKeys)> functionKeys = {FunctionKeys::ID...};
+      std::sort(passedKeys.begin(), passedKeys.end());
+      return passedKeys == functionKeys;
     }
 
-    template <class... KeyTypePack, size_t... Is>
+    template <class... AssignedKeyPack, std::enable_if_t<
+    eval<AssignedKeyPack...>(),
+    bool> = true>
+    typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
+    {
+      std::array<AssignedKey<void>,sizeof...(AssignedKeyPack)> arr = {_args.moveToVoid()...};
+      std::sort(arr.begin(), arr.end(), 
+        [](const AssignedKey<void>& a0, const AssignedKey<void>& a1)
+        {
+          return a0.getKeyID() < a1.getKeyID();
+        }
+      );
+
+      std::cout << "KEYS: ";
+      for (auto& a : arr) {
+        std::cout << a.getKeyID() << " ";
+      } std::cout << std::endl;
+
+      return internal<sizeof...(AssignedKeyPack)>(arr, std::make_index_sequence<sizeof...(_args)>{});
+    }
+
+    template <int N, class... AssignedKeyPack, size_t... Is>
     typename KeyFunctionTraits::ResultType 
-    internal(std::tuple<KeyTypePack...>& arr, std::index_sequence<Is...> const &)
+    internal(std::array<AssignedKey<void>, N>& arr, std::index_sequence<Is...> const &) const
     {
       return m_baseFunction(
-          any_cast<typename KeyFunctionTraits::arg<Is>::type>(std::get<Is>(arr))...);
+          any_cast<typename KeyFunctionTraits::arg<Is>::type>(arr[Is])...);
     }
 
 };
