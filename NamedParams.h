@@ -50,113 +50,69 @@ class AssignedKey
 {
   private:
 
-    uint8_t* m_pStorage;
-    std::type_index* m_pTypeIndex;
-    bool m_isReference;
-    bool m_isOptional;
+    typedef std::remove_reference<typename KeyType::type>::type NoRefType;
+
+    NoRefType* m_pValue;
     int m_keyID;
 
   public:
 
     AssignedKey() = delete;
 
-    AssignedKey(uint8_t* _pStorage, std::type_index* _pTypeIndex, 
-      bool _isReference, bool _isOptional, int _keyID)
-      : m_pStorage(_pStorage)
-      , m_pTypeIndex(_pTypeIndex)
-      , m_isReference(_isReference)
-      , m_isOptional(_isOptional)
+    AssignedKey(NoRefType* _pValue, int _keyID)
+      : m_pValue(_pValue)
       , m_keyID(_keyID)
     {
       //std::cout << "KEY NR: " << m_keyID << std::endl;
     }
 
     template <class T, std::enable_if_t<std::is_reference<T>::value, int> = 0>
-    static AssignedKey build(T _any)
+    static AssignedKey build(T _value)
     {
       std::cout << "INIT REF " << std::endl;
-      return AssignedKey(reinterpret_cast<uint8_t*>(&_any), 
-        new std::type_index(typeid(T)), true, IsOptional<T>::value, KeyType::ID);
+      return AssignedKey(&_value, KeyType::ID);
     }
 
     template <class T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
-    static AssignedKey build(T _any)
+    static AssignedKey build(T _value)
     {
       std::cout << "INIT NON-REF " << std::endl;
-      auto pStorage = new uint8_t[sizeof(T)];
-      auto pTypeIndex = new std::type_index(typeid(T));
-      std::memcpy(pStorage, &_any, sizeof(T));
-
-      return AssignedKey(pStorage, pTypeIndex, false, IsOptional<T>::value, KeyType::ID);
+      return AssignedKey(new T(_value), KeyType::ID);
     }
 
-    AssignedKey(const AssignedKey& _key) = delete;
+    AssignedKey(const AssignedKey& _input) = delete;
 
     AssignedKey(AssignedKey&& _input)
     {
-      m_pStorage = _input.m_pStorage;
-      m_pTypeIndex = _input.m_pTypeIndex;
-      m_isReference = _input.m_isReference;
-      m_isOptional = _input.m_isOptional;
+      m_pValue = _input.m_pValue;
       m_keyID = _input.m_keyID;
-      _input.m_pStorage = nullptr;
-      _input.m_pTypeIndex = nullptr;
+      _input.m_pValue = nullptr;
     }
 
     AssignedKey& operator=(const AssignedKey& _input) = delete;
 
     AssignedKey& operator=(AssignedKey&& _input) 
     {
-      m_pStorage = _input.m_pStorage;
-      m_pTypeIndex = _input.m_pTypeIndex;
-      m_isReference = _input.m_isReference;
-      m_isOptional = _input.m_isOptional;
+      m_pValue = _input.m_pValue;
       m_keyID = _input.m_keyID;
-      _input.m_pStorage = nullptr;
-      _input.m_pTypeIndex = nullptr;
+      _input.m_pValue = nullptr;
       return *this;
-    }
-
-    AssignedKey<void> moveToVoid() 
-    {
-      AssignedKey<void> out(m_pStorage, m_pTypeIndex, m_isReference, m_isOptional, m_keyID);
-      m_pStorage = nullptr;
-      m_pTypeIndex = nullptr;
-      return out;
     }
 
     ~AssignedKey()
     {
-      if (m_isReference)
-      {
-        std::cout << "IS REFERENCE" << std::endl;
-      }
-      else 
-      {
-        std::cout << "IS NOT REFERENCE" << std::endl;
-      }
-
-      if (m_pStorage && !m_isReference) 
+      if (m_pValue && !std::is_reference<typename KeyType::type>::value) 
       {
         std::cout << "FREEING " << m_keyID << std::endl;
-        delete [] m_pStorage;
-        m_pStorage = nullptr;
+        delete m_pValue;
+        m_pValue = nullptr;
       }
 
-      if (m_pTypeIndex)
-      {
-        delete m_pTypeIndex;
-      }
     }
 
-    uint8_t* getStorage() 
+    NoRefType* getValue() 
     {
-      return m_pStorage;
-    }
-
-    const std::type_index* getTypeIndex() const 
-    {
-      return m_pTypeIndex;
+      return m_pValue;
     }
 
     int getKeyID() const
@@ -166,43 +122,7 @@ class AssignedKey
 
     typedef KeyType Type;
 
-    //template <typename OtherKeyType>
-    //friend class AssignedKey;
-
-
 };
-
-template <typename T, class KeyType, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
-T any_cast(AssignedKey<KeyType>& _any)
-{
-  const std::type_index castType = typeid(T);
-  if (castType != *_any.getTypeIndex())
-  {
-    std::cout << "WRONG" << std::endl;
-  } 
-
-  std::cout << "REINTERPRET NON REF" << std::endl;
- 
-  T out;
-  std::memcpy(&out, _any.getStorage(), sizeof(T));
-  return out;
-}
-
-template <typename T, class KeyType, std::enable_if_t<std::is_reference<T>::value, bool> = true>
-T any_cast(AssignedKey<KeyType>& _any)
-{
-  const std::type_index castType = typeid(T);
-  if (castType != *_any.getTypeIndex())
-  {
-    std::cout << "WRONG" << std::endl;
-  } 
-
-  std::cout << "REINTERPRET NON REF" << std::endl;
-
-  T out = *reinterpret_cast<typename std::remove_reference<T>::type*>(_any.getStorage());
-
-  return out;
-}
 
 template <class KeyType, std::enable_if_t<!std::is_reference<typename KeyType::type>::value, bool> = true>
 inline auto cast(AssignedKey<KeyType>& _any)
@@ -358,16 +278,22 @@ class KeyGen
       return internal<AssignedKeyPack...>(_args..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
     }
 
+    struct AnyKey 
+    {
+      int id;
+      void* ptr;
+    };
+
     template <class... AssignedKeyPack, size_t... Is>
     typename KeyFunctionTraits::ResultType internal(AssignedKeyPack&... _args, std::index_sequence<Is...> const &) const
     {
-
-      std::array<AssignedKey<void>,sizeof...(AssignedKeyPack)> passedKeys = {_args.moveToVoid()...};
+      std::array<AnyKey,sizeof...(AssignedKeyPack)> passedKeys = {
+        AnyKey{_args.getKeyID(), (void*)&_args}...};
 
       std::sort(passedKeys.begin(), passedKeys.end(), 
-        [](const AssignedKey<void>& _a0, const AssignedKey<void>& _a1)
+        [](const auto& _p0, const auto& _p1)
         {
-          return _a0.getKeyID() < _a1.getKeyID();
+          return _p0.id < _p1.id;
         }
       );
 
@@ -387,7 +313,7 @@ class KeyGen
             return out;
           }
           // function paramter nr. _idx not present, fill woth nullopt
-          if (passedKeys[_idx - offset].getKeyID() > _key.ID) 
+          if (passedKeys[_idx - offset].id > _key.ID) 
           {
             ++offset;
             typename KeyType::type out = std::nullopt;
@@ -395,10 +321,11 @@ class KeyGen
           } 
         }
         // same key, transfer ownership
-        if (passedKeys[_idx - offset].getKeyID() == _key.ID)
+        if (passedKeys[_idx - offset].id == _key.ID)
         {
           std::cout << "CONVERTING KEY " << _key.ID << std::endl;
-          return any_cast<typename KeyType::type>(passedKeys[_idx - offset]);
+          auto pAssignedKey = (AssignedKey<KeyType>*)passedKeys[_idx-offset].ptr;
+          return *pAssignedKey->getValue();
         }
 
         // SHOULD NOT HAPPEN
@@ -422,7 +349,7 @@ class Register
 {
   private: 
     
-    inline static std::map<uint8_t*,std::vector<int>> m_functionKeyMap;
+    inline static std::map<void*,std::vector<int>> m_functionKeyMap;
 
   public:
 
