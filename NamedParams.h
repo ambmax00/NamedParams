@@ -44,7 +44,8 @@ struct IsKey : public std::false_type {};
 template <class T, int N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
-template <class KeyType>
+template <class KeyType, std::enable_if_t<
+  (IsKey<KeyType>::value || std::is_same<KeyType,void>::value),bool> = true>
 class AssignedKey
 {
   private:
@@ -52,16 +53,19 @@ class AssignedKey
     uint8_t* m_pStorage;
     std::type_index* m_pTypeIndex;
     bool m_isReference;
+    bool m_isOptional;
     int m_keyID;
 
   public:
 
     AssignedKey() = delete;
 
-    AssignedKey(uint8_t* _pStorage, std::type_index* _pTypeIndex, bool _isReference, int _keyID)
+    AssignedKey(uint8_t* _pStorage, std::type_index* _pTypeIndex, 
+      bool _isReference, bool _isOptional, int _keyID)
       : m_pStorage(_pStorage)
       , m_pTypeIndex(_pTypeIndex)
       , m_isReference(_isReference)
+      , m_isOptional(_isOptional)
       , m_keyID(_keyID)
     {
       //std::cout << "KEY NR: " << m_keyID << std::endl;
@@ -71,7 +75,8 @@ class AssignedKey
     static AssignedKey build(T _any)
     {
       std::cout << "INIT REF " << std::endl;
-      return AssignedKey(reinterpret_cast<uint8_t*>(&_any), new std::type_index(typeid(T)), true, KeyType::ID);
+      return AssignedKey(reinterpret_cast<uint8_t*>(&_any), 
+        new std::type_index(typeid(T)), true, IsOptional<T>::value, KeyType::ID);
     }
 
     template <class T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
@@ -82,7 +87,7 @@ class AssignedKey
       auto pTypeIndex = new std::type_index(typeid(T));
       std::memcpy(pStorage, &_any, sizeof(T));
 
-      return AssignedKey(pStorage, pTypeIndex, false, KeyType::ID);
+      return AssignedKey(pStorage, pTypeIndex, false, IsOptional<T>::value, KeyType::ID);
     }
 
     AssignedKey(const AssignedKey& _key) = delete;
@@ -92,6 +97,7 @@ class AssignedKey
       m_pStorage = _input.m_pStorage;
       m_pTypeIndex = _input.m_pTypeIndex;
       m_isReference = _input.m_isReference;
+      m_isOptional = _input.m_isOptional;
       m_keyID = _input.m_keyID;
       _input.m_pStorage = nullptr;
       _input.m_pTypeIndex = nullptr;
@@ -104,6 +110,7 @@ class AssignedKey
       m_pStorage = _input.m_pStorage;
       m_pTypeIndex = _input.m_pTypeIndex;
       m_isReference = _input.m_isReference;
+      m_isOptional = _input.m_isOptional;
       m_keyID = _input.m_keyID;
       _input.m_pStorage = nullptr;
       _input.m_pTypeIndex = nullptr;
@@ -112,7 +119,7 @@ class AssignedKey
 
     AssignedKey<void> moveToVoid() 
     {
-      AssignedKey<void> out(m_pStorage, m_pTypeIndex, m_isReference, m_keyID);
+      AssignedKey<void> out(m_pStorage, m_pTypeIndex, m_isReference, m_isOptional, m_keyID);
       m_pStorage = nullptr;
       m_pTypeIndex = nullptr;
       return out;

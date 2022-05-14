@@ -1,8 +1,11 @@
 #include "NamedParams.h"
 #include <string>
 
-inline static constexpr Key<float,0> pa;
+#define UNPAREN(...) __VA_ARGS__ 
+#define KEY(TYPE, ID) inline static constexpr Key< UNPAREN TYPE , ID > 
+#define KEYGEN inline static const KeyGen
 
+inline static constexpr Key<float,0> pa;
 inline static constexpr Key<int&,1> pb;
  
 int foo(float a, int& b)
@@ -12,7 +15,17 @@ int foo(float a, int& b)
   return a + b;
 }
 
-inline static const KeyGen fooWrapper(&foo,pa,pb);
+KEYGEN fooWrapper(&foo,pa,pb);
+
+int foo2(int a, std::optional<int> b)
+{
+  return (b) ? *b + a : a;
+}
+
+KEY((int),2) key0;
+KEY((std::optional<int>),3) key1;
+
+KEYGEN foo2Wrapper(&foo2, key0, key1);
 
 consteval int bar(const int& i)
 {
@@ -37,12 +50,17 @@ int main(int argc, char** argv)
   //Register::print();
 
   int ret = fooWrapper(pb = c, pa = 2);
+
+  int ret2 = foo2Wrapper(key0 = 1, key1 = 3);
   
   // correct result
   res += (ret == 7) ? 0 : 1;
 
   // correct reference
   res += (c == 5) ? 0 : 1;
+
+  // correct optional
+  res + (ret2 == 4) ? 0 : 1;
 
   return res;
 
