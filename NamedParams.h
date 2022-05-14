@@ -138,6 +138,7 @@ class AssignedKey
 
       if (m_pStorage && !m_isReference) 
       {
+        std::cout << "FREEING " << m_keyID << std::endl;
         delete [] m_pStorage;
         m_pStorage = nullptr;
       }
@@ -203,13 +204,32 @@ T any_cast(AssignedKey<KeyType>& _any)
   return out;
 }
 
+template <class KeyType, std::enable_if_t<!std::is_reference<typename KeyType::type>::value, bool> = true>
+inline auto cast(AssignedKey<KeyType>& _any)
+{
+  std::cout << "REINTERPRET NON REF" << std::endl;
+ 
+  typename KeyType::type out;
+  std::memcpy(&out, _any.getStorage(), sizeof(decltype(out)));
+  return out;
+}
+
+template <class KeyType, std::enable_if_t<std::is_reference<typename KeyType::type>::value, bool> = true>
+inline auto cast(AssignedKey<KeyType>& _any)
+{
+  typename KeyType::type out = *reinterpret_cast<
+    typename std::remove_reference<typename KeyType::type>::type*>(_any.getStorage());
+
+  return out;
+}
+
 template <typename T, int UNIQUE_ID> //FORCE_UNIQUE(UNIQUE_ID)>
 class Key
 {
   private:
 
   public:
-    consteval Key() {}
+    Key() {}
 
     Key(const Key& _other) = delete;
 
@@ -228,39 +248,6 @@ class Key
     static const int ID = UNIQUE_ID;
 
 };
-
-/*
-class Register
-{
-  private:
-
-    const inline static int m_maxGlobalNbKeys = 1000;
-
-    constexpr inline static std::array<int,MAX_GLOBAL_NB_KEYS> m_keys = {};
-
-  public:
-
-    template <class... KeyPack>
-    consteval static std::tuple<const typename KeyPack::idType...> createContext(const KeyPack&... _pack)
-    {
-      constexpr std::tuple<const typename KeyPack::idType...> out = std::make_tuple(_pack.m_keyID...);
-      return out;
-      //return createContext(_pack...);
-    }
-
-    consteval static int createContext()
-    {
-      return Counter<CounterType::KEY>::next();
-    }
-
-    inline static void print()
-    {
-      for (auto a : m_keys) {
-        std::cout << "KEY " << a << std::endl;
-      }
-    }
-    
-};*/
 
 template<typename T> 
 struct FunctionTraits;  
@@ -305,41 +292,127 @@ class KeyGen
     }
 
     template <class... AssignedKeyPack>
-    constexpr static inline bool eval()
+    constexpr static inline int eval()
     {
-      std::array<int,sizeof...(AssignedKeyPack)> passedKeys = {AssignedKeyPack::Type::ID...};
-      std::array<int,sizeof...(FunctionKeys)> functionKeys = {FunctionKeys::ID...};
+      constexpr int nbAssignedKeys = sizeof...(AssignedKeyPack);
+      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
+
+      std::array<int,nbAssignedKeys> passedKeys = {AssignedKeyPack::Type::ID...};
+      std::array<int,nbFunctionKeys> functionKeys = {FunctionKeys::ID...};
+
+      std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
+        IsOptional<typename FunctionKeys::type>::value...};
+      std::array<bool,nbAssignedKeys> passedKeyIsOptional = {
+        IsOptional<typename AssignedKeyPack::Type::type>::value...};
+
       std::sort(passedKeys.begin(), passedKeys.end());
-      return passedKeys == functionKeys;
+      int valid = 0;
+      int offset = 0;
+
+      for (int iArg = 0; iArg < nbFunctionKeys; ++iArg)
+      {
+        if (iArg >= nbAssignedKeys+offset && !functionKeyIsOptional[iArg])
+        {
+          valid = 1;
+          break;
+        }
+        else if (functionKeys[iArg] > passedKeys[iArg-offset])
+        {
+          valid = 2;
+          break;
+        }
+        else if (functionKeys[iArg] < passedKeys[iArg-offset] && !functionKeyIsOptional[iArg])
+        {
+          valid = 3;
+          break;
+        }
+        else if (functionKeys[iArg] < passedKeys[iArg-offset] && functionKeyIsOptional[iArg])
+        {
+          offset++;
+        }
+      }
+
+      if (valid == 1)
+      {
+        std::cout << "A REQUIRED KEY IS MISSING";
+      }
+
+      if (valid == 2)
+      {
+        std::cout << "INVALID KEY IN FUNCTION";
+      }
+
+      if (valid == 3)
+      {
+        std::cout << "A REQUIRED KEY IS MISSING";
+      }
+
+      return valid;
     }
 
     template <class... AssignedKeyPack, std::enable_if_t<
-    eval<AssignedKeyPack...>(),
-    bool> = true>
+    eval<AssignedKeyPack...>() == 0,
+    int> = 0>
     typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
     {
-      std::array<AssignedKey<void>,sizeof...(AssignedKeyPack)> arr = {_args.moveToVoid()...};
-      std::sort(arr.begin(), arr.end(), 
-        [](const AssignedKey<void>& a0, const AssignedKey<void>& a1)
+      return internal<AssignedKeyPack...>(_args..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
+    }
+
+    template <class... AssignedKeyPack, size_t... Is>
+    typename KeyFunctionTraits::ResultType internal(AssignedKeyPack&... _args, std::index_sequence<Is...> const &) const
+    {
+
+      std::array<AssignedKey<void>,sizeof...(AssignedKeyPack)> passedKeys = {_args.moveToVoid()...};
+
+      std::sort(passedKeys.begin(), passedKeys.end(), 
+        [](const AssignedKey<void>& _a0, const AssignedKey<void>& _a1)
         {
-          return a0.getKeyID() < a1.getKeyID();
+          return _a0.getKeyID() < _a1.getKeyID();
         }
       );
 
-      std::cout << "KEYS: ";
-      for (auto& a : arr) {
-        std::cout << a.getKeyID() << " ";
-      } std::cout << std::endl;
+      //std::array<int,sizeof...(_args)> passedKeyIDs = {_args.getKeyID()...};
+      //std::sort(passedKeyIDs.begin(), passedKeyIDs.end());
+      std::tuple<FunctionKeys...> functionKeyTypes;
+      int offset = 0;
 
-      return internal<sizeof...(AssignedKeyPack)>(arr, std::make_index_sequence<sizeof...(_args)>{});
-    }
+      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> KeyType::type
+      { 
+        // no more passed keys left, freturn empty optional
+        if constexpr (IsOptional<typename KeyType::type>::value)
+        {
+          if (_idx > sizeof...(_args) + offset)
+          {
+            typename KeyType::type out = std::nullopt;
+            return out;
+          }
+          // function paramter nr. _idx not present, fill woth nullopt
+          if (passedKeys[_idx - offset].getKeyID() > _key.ID) 
+          {
+            ++offset;
+            typename KeyType::type out = std::nullopt;
+            return out;
+          } 
+        }
+        // same key, transfer ownership
+        if (passedKeys[_idx - offset].getKeyID() == _key.ID)
+        {
+          std::cout << "CONVERTING KEY " << _key.ID << std::endl;
+          return any_cast<typename KeyType::type>(passedKeys[_idx - offset]);
+        }
 
-    template <int N, class... AssignedKeyPack, size_t... Is>
-    typename KeyFunctionTraits::ResultType 
-    internal(std::array<AssignedKey<void>, N>& arr, std::index_sequence<Is...> const &) const
-    {
-      return m_baseFunction(
-          any_cast<typename KeyFunctionTraits::arg<Is>::type>(arr[Is])...);
+        // SHOULD NOT HAPPEN
+        throw std::runtime_error("What happened here???");
+
+      };
+
+      std::tuple<typename FunctionKeys::type...> paddedParameters =
+        {process(std::get<Is>(functionKeyTypes), Is)...};
+
+      std::cout << "DONE, PASSING TO FUNCTION" << std::endl;
+
+      return m_baseFunction(std::get<Is>(paddedParameters)...);
+
     }
 
 };

@@ -2,11 +2,11 @@
 #include <string>
 
 #define UNPAREN(...) __VA_ARGS__ 
-#define KEY(TYPE, ID) inline static constexpr Key< UNPAREN TYPE , ID > 
+#define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
 #define KEYGEN inline static const KeyGen
 
-inline static constexpr Key<float,0> pa;
-inline static constexpr Key<int&,1> pb;
+inline static const Key<float,0> pa;
+inline static const Key<int&,1> pb;
  
 int foo(float a, int& b)
 {
@@ -17,15 +17,17 @@ int foo(float a, int& b)
 
 KEYGEN fooWrapper(&foo,pa,pb);
 
-int foo2(int a, std::optional<int> b)
+int foo2(int a, std::optional<int> b, std::string c)
 {
+  std::cout << "IN FUNCTION " << c << std::endl;
   return (b) ? *b + a : a;
 }
 
 KEY((int),2) key0;
 KEY((std::optional<int>),3) key1;
+KEY((std::string),4) key2;
 
-KEYGEN foo2Wrapper(&foo2, key0, key1);
+KEYGEN foo2Wrapper(&foo2, key0, key1, key2);
 
 consteval int bar(const int& i)
 {
@@ -51,7 +53,11 @@ int main(int argc, char** argv)
 
   int ret = fooWrapper(pb = c, pa = 2);
 
-  int ret2 = foo2Wrapper(key0 = 1, key1 = 3);
+  std::cout << "C: " << c << std::endl;
+ 
+  int ret2 = foo2Wrapper(key0 = 2, key1 = 1, key2 = "HELLO");
+
+  std::cout << "RETURNED" << std::endl;
   
   // correct result
   res += (ret == 7) ? 0 : 1;
