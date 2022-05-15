@@ -2,14 +2,11 @@
 #define NAMED_PARAMS_H
 
 #include <array>
-#include <cstring>
-#include <iostream>
 #include <functional>
 #include <numeric>
+#include <optional>
+#include <stdexcept>
 #include <tuple>
-#include <typeindex>
-#include <vector>
-#include <utility>
 
 using id_value = const int *;
 
@@ -63,20 +60,17 @@ class AssignedKey
       : m_pValue(_pValue)
       , m_keyID(_keyID)
     {
-      //std::cout << "KEY NR: " << m_keyID << std::endl;
     }
 
     template <class T, std::enable_if_t<std::is_reference<T>::value, int> = 0>
     static AssignedKey build(T _value)
     {
-      std::cout << "INIT REF " << std::endl;
       return AssignedKey(&_value, KeyType::ID);
     }
 
     template <class T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
     static AssignedKey build(T _value)
     {
-      std::cout << "INIT NON-REF " << std::endl;
       return AssignedKey(new T(_value), KeyType::ID);
     }
 
@@ -103,7 +97,6 @@ class AssignedKey
     {
       if (m_pValue && !std::is_reference<typename KeyType::type>::value) 
       {
-        std::cout << "FREEING " << m_keyID << std::endl;
         delete m_pValue;
         m_pValue = nullptr;
       }
@@ -138,8 +131,6 @@ class Key
 
     auto operator=(T _any) const
     {
-      //std::cout << "TYPE: " << std::is_reference<T>::value << " " << std::type_index(typeid(T)).name() << std::endl;
-      std::cout << "SHOULD NOT BE CALLED" << std::endl;
       auto k = AssignedKey<Key>::template build<T>(_any);
       return k;
     }
@@ -216,6 +207,23 @@ class KeyGen
       std::array<bool,nbAssignedKeys> passedKeyIsOptional = {
         IsOptional<typename AssignedKeyPack::Type::type>::value...};
 
+      // check for empty assigned keys
+      int nbRequiredKeys = 0;
+      for (auto b : functionKeyIsOptional)
+      {
+        nbRequiredKeys += (b) ? 0 : 1;
+      }
+
+      if (nbRequiredKeys != 0 && nbAssignedKeys == 0)
+      {
+        return EvalReturn{false, 2, 0};
+      }    
+
+      if (nbRequiredKeys == 0 && nbAssignedKeys == 0) 
+      {
+        return EvalReturn{true, 0, 0};
+      } 
+
       std::sort(passedKeys.begin(), passedKeys.end());
       EvalReturn evalReturn = {true, 0, 0};
       int offset = 0;
@@ -266,6 +274,11 @@ class KeyGen
       {
         ConstExprError<error.id> INVALID_KEY;
       }
+
+      if constexpr (!error.success && error.type == 2)
+      {
+        ConstExprError<error.id> MISSING_KEY;
+      }
     
       return 0;
     }
@@ -307,7 +320,7 @@ class KeyGen
         if constexpr (IsOptional<typename KeyType::type>::value)
         {
           // no more passed keys left, return empty optional
-          if (_idx > sizeof...(_args) + offset)
+          if (_idx >= sizeof...(_args) + offset)
           {
             typename KeyType::type out = std::nullopt;
             return out;
@@ -323,20 +336,17 @@ class KeyGen
         // same key, transfer ownership
         if (passedKeys[_idx - offset].id == _key.ID)
         {
-          std::cout << "CONVERTING KEY " << _key.ID << std::endl;
           auto pAssignedKey = (AssignedKey<KeyType>*)passedKeys[_idx-offset].ptr;
           return *pAssignedKey->getValue();
         }
 
         // SHOULD NOT HAPPEN
-        throw std::runtime_error("What happened here???");
+        throw std::runtime_error("This should not happen");
 
       };
 
       std::tuple<typename FunctionKeys::type...> paddedParameters =
         {process(std::get<Is>(functionKeyTypes), Is)...};
-
-      std::cout << "DONE, PASSING TO FUNCTION" << std::endl;
 
       return m_baseFunction(std::get<Is>(paddedParameters)...);
 
