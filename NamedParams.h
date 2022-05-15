@@ -124,25 +124,6 @@ class AssignedKey
 
 };
 
-template <class KeyType, std::enable_if_t<!std::is_reference<typename KeyType::type>::value, bool> = true>
-inline auto cast(AssignedKey<KeyType>& _any)
-{
-  std::cout << "REINTERPRET NON REF" << std::endl;
- 
-  typename KeyType::type out;
-  std::memcpy(&out, _any.getStorage(), sizeof(decltype(out)));
-  return out;
-}
-
-template <class KeyType, std::enable_if_t<std::is_reference<typename KeyType::type>::value, bool> = true>
-inline auto cast(AssignedKey<KeyType>& _any)
-{
-  typename KeyType::type out = *reinterpret_cast<
-    typename std::remove_reference<typename KeyType::type>::type*>(_any.getStorage());
-
-  return out;
-}
-
 template <typename T, int UNIQUE_ID> //FORCE_UNIQUE(UNIQUE_ID)>
 class Key
 {
@@ -322,9 +303,10 @@ class KeyGen
 
       auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> KeyType::type
       { 
-        // no more passed keys left, freturn empty optional
+        
         if constexpr (IsOptional<typename KeyType::type>::value)
         {
+          // no more passed keys left, return empty optional
           if (_idx > sizeof...(_args) + offset)
           {
             typename KeyType::type out = std::nullopt;
