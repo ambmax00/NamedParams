@@ -55,7 +55,7 @@ int main(int argc, char** argv)
 
   std::cout << "C: " << c << std::endl;
  
-  int ret2 = foo2Wrapper(key0 = 2, key2 = "HELLO", key1 = 1);
+  int ret2 = foo2Wrapper(key0 = 1, key2 = "HELLO", key1 = 1);
 
   std::cout << "RETURNED" << std::endl;
   

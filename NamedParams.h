@@ -169,6 +169,9 @@ class Key
 
 };
 
+template <int i>
+class ConstExprError;
+
 template<typename T> 
 struct FunctionTraits;  
 
@@ -211,8 +214,15 @@ class KeyGen
       return m_baseFunction;
     }
 
+    struct EvalReturn
+    {
+      bool success;
+      int type;
+      int id;
+    };
+
     template <class... AssignedKeyPack>
-    constexpr static inline int eval()
+    constexpr static inline EvalReturn eval()
     {
       constexpr int nbAssignedKeys = sizeof...(AssignedKeyPack);
       constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
@@ -226,24 +236,30 @@ class KeyGen
         IsOptional<typename AssignedKeyPack::Type::type>::value...};
 
       std::sort(passedKeys.begin(), passedKeys.end());
-      int valid = 0;
+      EvalReturn evalReturn = {true, 0, 0};
       int offset = 0;
 
       for (int iArg = 0; iArg < nbFunctionKeys; ++iArg)
       {
         if (iArg >= nbAssignedKeys+offset && !functionKeyIsOptional[iArg])
         {
-          valid = 1;
+          evalReturn.success = false;
+          evalReturn.type = 0;
+          evalReturn.id = functionKeys[iArg];
           break;
         }
         else if (functionKeys[iArg] > passedKeys[iArg-offset])
         {
-          valid = 2;
+          evalReturn.success = false;
+          evalReturn.type = 1;
+          evalReturn.id = passedKeys[iArg-offset];
           break;
         }
         else if (functionKeys[iArg] < passedKeys[iArg-offset] && !functionKeyIsOptional[iArg])
         {
-          valid = 3;
+          evalReturn.success = false;
+          evalReturn.type = 0;
+          evalReturn.id = functionKeys[iArg];
           break;
         }
         else if (functionKeys[iArg] < passedKeys[iArg-offset] && functionKeyIsOptional[iArg])
@@ -252,26 +268,30 @@ class KeyGen
         }
       }
 
-      if (valid == 1)
-      {
-        std::cout << "A REQUIRED KEY IS MISSING";
-      }
-
-      if (valid == 2)
-      {
-        std::cout << "INVALID KEY IN FUNCTION";
-      }
-
-      if (valid == 3)
-      {
-        std::cout << "A REQUIRED KEY IS MISSING";
-      }
-
-      return valid;
+      return evalReturn;
     }
 
+    template <class... AssignedKeyPack>
+    constexpr static inline int evalError()
+    {
+      constexpr EvalReturn error = eval<AssignedKeyPack...>();
+
+      if constexpr (!error.success && error.type == 0) 
+      {
+        ConstExprError<error.id> MISSING_KEY;
+      }
+
+      if constexpr (!error.success && error.type == 1)
+      {
+        ConstExprError<error.id> INVALID_KEY;
+      }
+    
+      return 0;
+    }
+
+
     template <class... AssignedKeyPack, std::enable_if_t<
-    eval<AssignedKeyPack...>() == 0,
+    evalError<AssignedKeyPack...>() == 0,
     int> = 0>
     typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
     {
@@ -297,8 +317,6 @@ class KeyGen
         }
       );
 
-      //std::array<int,sizeof...(_args)> passedKeyIDs = {_args.getKeyID()...};
-      //std::sort(passedKeyIDs.begin(), passedKeyIDs.end());
       std::tuple<FunctionKeys...> functionKeyTypes;
       int offset = 0;
 
