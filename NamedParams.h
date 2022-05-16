@@ -8,6 +8,96 @@
 #include <stdexcept>
 #include <tuple>
 
+#if __cplusplus < 201703L
+#error Minimum C++17 is required for NamedParams
+#endif
+
+#if __cplusplus >= 202002L
+#define CXX20
+#endif
+
+#ifndef CXX20
+
+/**
+  * We need to define our own constexpr swap and sort functions for C++17 
+*/
+template <class T>
+constexpr void _swap(T& _a, T& _b)
+{
+  if (&_a == &_b) 
+  {
+    return;
+  }
+  T tmp(std::move(_a));
+  _a = std::move(_b);
+  _b = std::move(tmp);
+}
+
+template <class Iterator, class Compare>
+inline constexpr Iterator _partition(Iterator _begin, Iterator _end, Compare _comp)
+{
+  Iterator pivot = _end - 1; 
+  Iterator smallest = _begin - 1;
+
+  for (auto it = _begin; it < pivot; ++it)
+  {
+    if (_comp(*it,*pivot))
+    {
+      smallest++;
+      _swap(*smallest,*it);
+    }
+  }
+
+  _swap(*(smallest+1), *(_end-1));
+  return smallest+1;
+}
+
+template <class Iterator, class Compare>
+inline constexpr void _sort(Iterator _begin, Iterator _end, Compare _comp)
+{
+  if (_begin == _end)
+  {
+    return;
+  }
+
+  if (_begin < _end-1)
+  {
+    auto pivot = _partition(_begin, _end, _comp);
+    _sort(_begin, pivot, _comp);
+    _sort(pivot, _end, _comp);
+  }
+
+  return;
+}
+
+template <class Iterator>
+inline constexpr void _sort(Iterator _begin, Iterator _end)
+{
+  auto comp = [](const decltype(*_begin)& _a, const decltype(*_end)& _b)
+  {
+    return _a < _b;
+  };
+  _sort(_begin, _end, comp);
+}
+
+#else // CXX20
+
+/* Use inbuilt sort function */
+
+template <class Iterator, class Comp>
+inline constexpr void _sort(Iterator _begin, Iterator _end, Comp _comp)
+{
+  std::sort(_begin, _end, _comp);
+}
+
+template <class Iterator>
+inline constexpr void _sort(Iterator _begin, Iterator _end)
+{
+  std::sort(_begin, _end);
+}
+
+#endif // CXX20
+
 using id_value = const int *;
 
 template <class T>
@@ -27,6 +117,10 @@ struct unique_id {
 #define FORCE_UNIQUE(name...) id_value name = unique_id([] {})
 #define UNIQUE *unique_id([]{})
 
+/**
+  * Define stucts for identifying optional and key
+*/
+
 template <class T>
 struct IsOptional : public std::false_type {};
 
@@ -42,67 +136,12 @@ struct IsKey : public std::false_type {};
 template <class T, int N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
-template <class T>
-constexpr void swap(T& _a, T& _b)
-{
-  if (&_a == &_b) 
-  {
-    return;
-  }
-  T tmp(std::move(_a));
-  _a = std::move(_b);
-  _b = std::move(tmp);
-}
-
-template <class Iterator, class Compare>
-inline constexpr Iterator partition(Iterator _begin, Iterator _end, Compare _comp)
-{
-  Iterator pivot = _end - 1; 
-  Iterator smallest = _begin - 1;
-
-  for (auto it = _begin; it < pivot; ++it)
-  {
-    if (_comp(*it,*pivot))
-    {
-      smallest++;
-      swap(*smallest,*it);
-    }
-  }
-
-  swap(*(smallest+1), *(_end-1));
-  return smallest+1;
-}
-
-template <class Iterator, class Compare>
-inline constexpr void sort(Iterator _begin, Iterator _end, Compare _comp)
-{
-  if (_begin == _end)
-  {
-    return;
-  }
-
-  if (_begin < _end-1)
-  {
-    auto pivot = partition(_begin, _end, _comp);
-    sort(_begin, pivot, _comp);
-    sort(pivot, _end, _comp);
-  }
-
-  return;
-}
-
-template <class Iterator>
-inline constexpr void sort(Iterator _begin, Iterator _end)
-{
-  auto comp = [](const decltype(*_begin)& _a, const decltype(*_end)& _b)
-  {
-    return _a < _b;
-  };
-  sort(_begin, _end, comp);
-}
-
-template <class KeyType, std::enable_if_t<
-  (IsKey<KeyType>::value || std::is_same<KeyType,void>::value),bool> = true>
+/**
+ * AssignedKey is the result of assigning(=) a Key to a value.
+ * If the Keytype is a reference, it contains a pointer to the variable 
+ * the key was assigned to. If not, it contains a copy of the variable
+ */
+template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool> = true>
 class AssignedKey
 {
   private:
@@ -173,11 +212,19 @@ class AssignedKey
       return m_keyID;
     }
 
-    typedef KeyType Type;
+    typedef KeyType keyType;
 
 };
 
-template <typename T, int UNIQUE_ID> //FORCE_UNIQUE(UNIQUE_ID)>
+/**
+ * The Key class allows to define named parameters that are passed to the KeyGen object.
+ * Keys can be reused from one function to another.
+ * Keys in the same function should not have the same UNIQUE_ID, or everything
+ * will break down.
+ * The Key class does not keep any record of the variable it is assigned to,
+ * but delegates the work to AssignedKey.
+ */
+template <typename T, int UNIQUE_ID> 
 class Key
 {
   private:
@@ -201,9 +248,16 @@ class Key
 
 };
 
+/**
+ * Helper class to force a compile error
+ */
 template <int i>
 class ConstExprError;
 
+/**
+ * FunctionTraits taken from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
+ * A helper class to get the variable types of a function
+ */
 template<typename T> 
 struct FunctionTraits;  
 
@@ -220,6 +274,7 @@ struct FunctionTraits<std::function<R(Args...)>>
         typedef typename std::tuple_element<i, std::tuple<Args...>>::type type;
     };
 };
+
 
 template <typename Func, class... FunctionKeys>
 class KeyGen
@@ -259,13 +314,13 @@ class KeyGen
       constexpr int nbAssignedKeys = sizeof...(AssignedKeyPack);
       constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
 
-      std::array<int,nbAssignedKeys> passedKeys = {AssignedKeyPack::Type::ID...};
+      std::array<int,nbAssignedKeys> passedKeys = {AssignedKeyPack::keyType::ID...};
       std::array<int,nbFunctionKeys> functionKeys = {FunctionKeys::ID...};
 
       std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
         IsOptional<typename FunctionKeys::type>::value...};
       std::array<bool,nbAssignedKeys> passedKeyIsOptional = {
-        IsOptional<typename AssignedKeyPack::Type::type>::value...};
+        IsOptional<typename AssignedKeyPack::keyType::type>::value...};
 
       // check for empty assigned keys
       int nbRequiredKeys = 0;
@@ -284,7 +339,7 @@ class KeyGen
         return EvalReturn{true, 0, 0};
       } 
 
-      sort(passedKeys.begin(), passedKeys.end());
+      _sort(passedKeys.begin(), passedKeys.end());
       EvalReturn evalReturn = {true, 0, 0};
       int offset = 0;
 
@@ -364,7 +419,7 @@ class KeyGen
       std::array<AnyKey,sizeof...(AssignedKeyPack)> passedKeys = {
         AnyKey{_args.getKeyID(), (void*)&_args}...};
 
-      sort(passedKeys.begin(), passedKeys.end(), 
+      _sort(passedKeys.begin(), passedKeys.end(), 
         [](const auto& _p0, const auto& _p1)
         {
           return _p0.id < _p1.id;
@@ -413,26 +468,5 @@ class KeyGen
     }
 
 };
-
-#if 0
-class Register
-{
-  private: 
-    
-    inline static std::map<void*,std::vector<int>> m_functionKeyMap;
-
-  public:
-
-    Register() = delete;
-    ~Register() {}
-
-    template <class T, class... KeyTypes>
-    static void addKeys(Key<T>& _key, KeyTypes... args)
-    {
-
-    }
-
-}
-#endif
 
 #endif // NAMED_PARAMS_H
