@@ -132,6 +132,8 @@ int main(int argc, char** argv)
   int ret4 = foo2Wrapper(key0 = 1, key3 = 3);
   CHECK_EQUAL(ret4, 4, result);
 
+  //int retNone = foo2Wrapper(key0 = 1, key0 =2);
+
   std::string ret5 = foo3Wrapper();
   CHECK_EQUAL(ret5, "", result);
   

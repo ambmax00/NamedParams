@@ -339,6 +339,15 @@ class KeyGen
         return EvalReturn{true, 0, 0};
       } 
 
+      // check for multiple keys of same type
+      for (int i = 1; i < nbAssignedKeys; ++i)
+      {
+        if (passedKeys[i-1] == passedKeys[i])
+        {
+          return EvalReturn{false, 3, passedKeys[i-1]};
+        }
+      }
+
       _sort(passedKeys.begin(), passedKeys.end());
       EvalReturn evalReturn = {true, 0, 0};
       int offset = 0;
@@ -402,6 +411,11 @@ class KeyGen
       if constexpr (!error.success && error.type == 2)
       {
         ConstExprError<error.id> MISSING_KEY;
+      }
+
+      if constexpr (!error.success && error.type == 3)
+      {
+        ConstExprError<error.id> MULTIPLE_KEYS_OF_SAME_TYPE;
       }
     
       return 0;
