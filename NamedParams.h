@@ -345,6 +345,7 @@ class KeyGen
 
       for (int iArg = 0; iArg < nbFunctionKeys; ++iArg)
       {
+        // no more passed keys to parse, and function key is NOT optional
         if (iArg >= nbAssignedKeys+offset && !functionKeyIsOptional[iArg])
         {
           evalReturn.success = false;
@@ -352,6 +353,12 @@ class KeyGen
           evalReturn.id = functionKeys[iArg];
           break;
         }
+        // no more passed keys to parse and function key IS optional 
+        else if (iArg >= nbAssignedKeys+offset && functionKeyIsOptional[iArg])
+        {
+          continue;
+        }
+        // function key should never be larger than the pass key
         else if (functionKeys[iArg] > passedKeys[iArg-offset])
         {
           evalReturn.success = false;
@@ -359,6 +366,7 @@ class KeyGen
           evalReturn.id = passedKeys[iArg-offset];
           break;
         }
+        // if the function key is smaller, some key might be missing - check if optional
         else if (functionKeys[iArg] < passedKeys[iArg-offset] && !functionKeyIsOptional[iArg])
         {
           evalReturn.success = false;
@@ -366,6 +374,7 @@ class KeyGen
           evalReturn.id = functionKeys[iArg];
           break;
         }
+        // same as above. but incrementing offset
         else if (functionKeys[iArg] < passedKeys[iArg-offset] && functionKeyIsOptional[iArg])
         {
           offset++;

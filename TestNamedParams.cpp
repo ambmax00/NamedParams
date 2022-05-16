@@ -31,23 +31,32 @@ KEY((float),0) pa;
 KEY((int&),1) pb;
 KEYGEN fooWrapper(&foo,pa,pb);
 
-int foo2(int a, std::optional<int> b, std::string c)
+int foo1(int a, std::optional<int> b, std::string c)
 {
   return (b) ? *b + a : a;
+}
+
+int foo2(int a, int b, std::optional<int> c)
+{
+  return (c) ? *c + a + b : a + b;
 }
 
 KEY((int),2) key0;
 KEYOPT((int),3) key1;
 KEY((std::string),4) key2;
-KEYGEN foo2Wrapper(&foo2, key0, key1, key2);
+KEY((int),5) key3;
+KEYOPT((int),6) key4;
+
+KEYGEN foo1Wrapper(&foo1, key0, key1, key2);
+KEYGEN foo2Wrapper(&foo2, key0, key3, key4);
 
 std::string foo3(std::optional<std::string> s)
 {
   return s ? *s : "";
 }
 
-KEYOPT((std::string),5) key3;
-KEYGEN foo3Wrapper(&foo3, key3);
+KEYOPT((std::string),7) key6;
+KEYGEN foo3Wrapper(&foo3, key6);
 
 class Test
 {
@@ -114,14 +123,17 @@ int main(int argc, char** argv)
   CHECK_EQUAL(ret, 7, result);
   CHECK_EQUAL(c, 5, result);
  
-  int ret2 = foo2Wrapper(key0 = 1, key2 = "HELLO", key1 = 1);
+  int ret2 = foo1Wrapper(key0 = 1, key2 = "HELLO", key1 = 1);
   CHECK_EQUAL(ret2, 2, result);
 
-  int ret3 = foo2Wrapper(key0 = 1, key2 = "HELLO");
+  int ret3 = foo1Wrapper(key0 = 1, key2 = "HELLO");
   CHECK_EQUAL(ret3, 1, result);
 
-  std::string ret4 = foo3Wrapper();
-  CHECK_EQUAL(ret4, "", result);
+  int ret4 = foo2Wrapper(key0 = 1, key3 = 3);
+  CHECK_EQUAL(ret4, 4, result);
+
+  std::string ret5 = foo3Wrapper();
+  CHECK_EQUAL(ret5, "", result);
   
   Test t0 = Test::buildWrapper(Test::param1 = 3.14, Test::param2 = "HELLO", Test::param0 = 1);
   CHECK_EQUAL(t0.m_int, 1, result);
