@@ -25,6 +25,7 @@ struct unique_id {
    value at each deduction
 */
 #define FORCE_UNIQUE(name...) id_value name = unique_id([] {})
+#define UNIQUE *unique_id([]{})
 
 template <class T>
 struct IsOptional : public std::false_type {};
@@ -41,13 +42,72 @@ struct IsKey : public std::false_type {};
 template <class T, int N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
+template <class T>
+constexpr void swap(T& _a, T& _b)
+{
+  if (&_a == &_b) 
+  {
+    return;
+  }
+  T tmp(std::move(_a));
+  _a = std::move(_b);
+  _b = std::move(tmp);
+}
+
+template <class Iterator, class Compare>
+inline constexpr Iterator partition(Iterator _begin, Iterator _end, Compare _comp)
+{
+  Iterator pivot = _end - 1; 
+  Iterator smallest = _begin - 1;
+
+  for (auto it = _begin; it < pivot; ++it)
+  {
+    if (_comp(*it,*pivot))
+    {
+      smallest++;
+      swap(*smallest,*it);
+    }
+  }
+
+  swap(*(smallest+1), *(_end-1));
+  return smallest+1;
+}
+
+template <class Iterator, class Compare>
+inline constexpr void sort(Iterator _begin, Iterator _end, Compare _comp)
+{
+  if (_begin == _end)
+  {
+    return;
+  }
+
+  if (_begin < _end-1)
+  {
+    auto pivot = partition(_begin, _end, _comp);
+    sort(_begin, pivot, _comp);
+    sort(pivot, _end, _comp);
+  }
+
+  return;
+}
+
+template <class Iterator>
+inline constexpr void sort(Iterator _begin, Iterator _end)
+{
+  auto comp = [](const decltype(*_begin)& _a, const decltype(*_end)& _b)
+  {
+    return _a < _b;
+  };
+  sort(_begin, _end, comp);
+}
+
 template <class KeyType, std::enable_if_t<
   (IsKey<KeyType>::value || std::is_same<KeyType,void>::value),bool> = true>
 class AssignedKey
 {
   private:
 
-    typedef std::remove_reference<typename KeyType::type>::type NoRefType;
+    typedef typename std::remove_reference<typename KeyType::type>::type NoRefType;
 
     NoRefType* m_pValue;
     int m_keyID;
@@ -224,7 +284,7 @@ class KeyGen
         return EvalReturn{true, 0, 0};
       } 
 
-      std::sort(passedKeys.begin(), passedKeys.end());
+      sort(passedKeys.begin(), passedKeys.end());
       EvalReturn evalReturn = {true, 0, 0};
       int offset = 0;
 
@@ -304,7 +364,7 @@ class KeyGen
       std::array<AnyKey,sizeof...(AssignedKeyPack)> passedKeys = {
         AnyKey{_args.getKeyID(), (void*)&_args}...};
 
-      std::sort(passedKeys.begin(), passedKeys.end(), 
+      sort(passedKeys.begin(), passedKeys.end(), 
         [](const auto& _p0, const auto& _p1)
         {
           return _p0.id < _p1.id;
@@ -314,7 +374,7 @@ class KeyGen
       std::tuple<FunctionKeys...> functionKeyTypes;
       int offset = 0;
 
-      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> KeyType::type
+      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> typename KeyType::type
       { 
         
         if constexpr (IsOptional<typename KeyType::type>::value)
