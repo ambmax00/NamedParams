@@ -29,7 +29,8 @@ int foo(float a, int& b)
 
 KEY((float),0) pa;
 KEY((int&),1) pb;
-KEYGEN fooWrapper(&foo,pa,pb);
+//KEYGEN 
+inline static const KeyGen fooWrapper(&foo,pa,pb);
 
 int foo1(int a, std::optional<int> b, std::string c)
 {
@@ -66,14 +67,19 @@ class Test
     float m_float;
     std::string m_str;
 
-    KEY((int), 0) param0;
-    KEY((float), 1) param1;
-    KEYOPT((std::string),2) param2;
+    KEY((int), 0) paramI;
+    KEY((float), 1) paramF;
+    KEYOPT((std::string),2) paramS;
 
-    KEY((int), 3) param3;
-    KEY((int), 4) param4;
-    KEY((float), 5) param5;
-    KEYOPT((int), 6) param6;
+    /*KEY((int), 3) paramA;
+    KEY((int), 4) paramB;
+    KEY((float), 5) paramC;
+    KEYOPT((int), 6) paramD;*/
+
+    inline static Key<int,3> paramA;
+    inline static Key<int,4> paramB;
+    inline static Key<float,5> paramC;
+    inline static Key<int,6> paramD;
 
     Test(int _i, float _f, std::string _s) 
       : m_int(_i)
@@ -94,7 +100,7 @@ class Test
       }
     }
 
-    KEYGEN buildWrapper = KeyGen(&Test::build, param0, param1, param2);
+    KEYGEN buildWrapper = KeyGen(&Test::build, paramI, paramF, paramS);
 
     int compute(int _a, int _b, float _c, std::optional<int> _d)
     {
@@ -108,7 +114,44 @@ class Test
       }
     }
 
+    //const KeyGenClass computeW = KeyGenClass(this, &Test::compute,paramA,paramB,paramC,paramD);
+
+    /*const KeyGen<int(Test::*)(int,int,float,std::optional<int>),
+      decltype(paramA), decltype(paramB), decltype(paramC),
+      decltype(paramD)> 
+    computeWrapper = KeyGen(&Test::compute, paramA, paramB, paramC, paramD);*/
+
 };
+
+template <typename FuncPtr> //, class... FunctionKeys>
+class KeyGenTest
+{
+  private:
+
+    typedef FunctionTraits<typename std::remove_pointer<FuncPtr>::type> KeyFunctionTraits;
+
+    FuncPtr m_baseFunction; 
+
+    std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
+
+  public:
+
+    KeyGenTest(FuncPtr f) 
+      : m_baseFunction(f)
+      //, m_keyIDs({_keys.ID...})
+    {
+      //ConstExprError<2> test;
+    }
+
+    /*template <typename FunctionPointer, 
+      std::enable_if_t<std::is_member_function_pointer<FunctionPointer>::value,bool> = true>
+    KeyGenTest(FunctionPointer _function) // const FunctionKeys&... _keys)
+    {
+      ConstExprError<3> test;
+    }*/
+
+};
+
 
 int main(int argc, char** argv)
 {
@@ -137,10 +180,19 @@ int main(int argc, char** argv)
   std::string ret5 = foo3Wrapper();
   CHECK_EQUAL(ret5, "", result);
   
-  Test t0 = Test::buildWrapper(Test::param1 = 3.14, Test::param2 = "HELLO", Test::param0 = 1);
+  Test t0 = Test::buildWrapper(Test::paramF = 3.14, Test::paramS = "HELLO", Test::paramI = 1);
   CHECK_EQUAL(t0.m_int, 1, result);
   CHECK_ALMOST_EQUAL(t0.m_float, 3.14, result);
   CHECK_EQUAL(t0.m_str, "HELLO", result);
+
+  auto testCompute = &Test::compute;
+  (t0.*testCompute)(5,6,7.0,8.0);
+
+  KeyGenTest b(&foo1); //, 5, 6, 7);
+
+  KeyGenTest b2(&Test::compute); //, 5, 6, 7);
+
+  //t0.*computeW(Test::paramA = 1, Test::paramB = 2, Test::paramC = 3, Test::paramD = 4);
 
   /*Test t1 = Test::buildWrapper(Test::param0 = 5, Test::param1 = 6.28); // TAU GANG REPRESENT
   CHECK_EQUAL(t1.m_int, 5, result);

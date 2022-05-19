@@ -217,7 +217,7 @@ class AssignedKey
 };
 
 /**
- * The Key class allows to define named parameters that are passed to the KeyGen object.
+ * The Key class allows to define named parameters that are passed to the KeyGenClass object.
  * Keys can be reused from one function to another.
  * Keys in the same function should not have the same UNIQUE_ID, or everything
  * will break down.
@@ -262,7 +262,7 @@ template<typename T>
 struct FunctionTraits;  
 
 template<typename R, typename ...Args> 
-struct FunctionTraits<std::function<R(Args...)>>
+struct FunctionTraits<R(Args...)>
 {
     static const size_t nbArgs = sizeof...(Args);
 
@@ -275,28 +275,55 @@ struct FunctionTraits<std::function<R(Args...)>>
     };
 };
 
+// member function pointer
+template<class C, class R, class... Args>
+struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraits<R(C&,Args...)>
+{};
+ 
+// const member function pointer
+template<class C, class R, class... Args>
+struct FunctionTraits<R(C::*)(Args...) const> : public FunctionTraits<R(C&,Args...)>
+{};
+ 
+// member object pointer
+template<class C, class R>
+struct FunctionTraits<R(C::*)> : public FunctionTraits<R(C&)>
+{};
 
-template <typename Func, class... FunctionKeys>
-class KeyGen
+template <class T, class FunctionPtr, class... FunctionKeys>
+class KeyGenClass
 {
   private:
 
-    typedef FunctionTraits<std::function<Func>> KeyFunctionTraits;
+    T* m_classPtr;
 
-    Func* m_baseFunction; 
+    typedef FunctionTraits<typename std::remove_pointer<FunctionPtr>::type> KeyFunctionTraits;
+
+    FunctionPtr m_baseFunction; 
 
     std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
 
   public:
-    KeyGen(Func* _function, const FunctionKeys&... _keys) 
-      : m_baseFunction(_function)
-      //, m_keyIDs({_keys.ID...})
+
+    template <class D, class _FunctionPtr, class... _FunctionKeys,
+      std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
+    KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
+      : m_classPtr(_classPtr)
+      , m_baseFunction(_function)
     {
     }
 
-    ~KeyGen() {}
+    template <class D, class _FunctionPtr, class... _FunctionKeys,
+      std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
+    KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
+      : m_classPtr(_classPtr)
+      , m_baseFunction(_function)
+    {
+    }
 
-    std::function<Func> getBaseFunction() const
+    ~KeyGenClass() {}
+
+    std::function<FunctionPtr> getBaseFunction() const
     {
       return m_baseFunction;
     }
@@ -491,5 +518,18 @@ class KeyGen
     }
 
 };
+
+template <class FunctionPtr, class... FunctionKeys>
+class KeyGen : public KeyGenClass<void,FunctionPtr,FunctionKeys...>
+{
+  public:
+    KeyGen(FunctionPtr _function, const FunctionKeys&... _keys) 
+      : KeyGenClass<void,FunctionPtr,FunctionKeys...>((void*)nullptr, _function, _keys...)
+    {
+    }
+};
+
+template <class D, class _FunctionPtr, class... _FunctionKeys>
+KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<D,_FunctionPtr,_FunctionKeys...>;
 
 #endif // NAMED_PARAMS_H
