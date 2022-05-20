@@ -20,6 +20,9 @@
 #define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
 #define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
 #define KEYGEN inline static const KeyGen
+
+#define _MEMKEYGEN() 
+#define MEMKEYGEN()
  
 int foo(float a, int& b)
 {
@@ -71,20 +74,16 @@ class Test
     KEY((float), 1) paramF;
     KEYOPT((std::string),2) paramS;
 
-    /*KEY((int), 3) paramA;
-    KEY((int), 4) paramB;
-    KEY((float), 5) paramC;
-    KEYOPT((int), 6) paramD;*/
-
     inline static Key<int,3> paramA;
     inline static Key<int,4> paramB;
-    inline static Key<float,5> paramC;
-    inline static Key<int,6> paramD;
+    inline static Key<float&,5> paramC;
+    inline static Key<std::optional<int>,6> paramD;
 
     Test(int _i, float _f, std::string _s) 
       : m_int(_i)
       , m_float(_f)
       , m_str(_s)
+      , computeW(this, &Test::compute,paramA,paramB,paramC,paramD)
     {
     }
   
@@ -102,56 +101,30 @@ class Test
 
     KEYGEN buildWrapper = KeyGen(&Test::build, paramI, paramF, paramS);
 
-    int compute(int _a, int _b, float _c, std::optional<int> _d)
+    int compute(int _a, int _b, float& _c, std::optional<int> _d)
     {
       if (_d)
       {
+        _c = 6.0;
         return m_int + _a + _b + _c + *_d;
       }
       else 
       {
+        _c = 6.0;
         return m_int + _a + _b + _c;
       }
     }
 
-    //const KeyGenClass computeW = KeyGenClass(this, &Test::compute,paramA,paramB,paramC,paramD);
-
-    /*const KeyGen<int(Test::*)(int,int,float,std::optional<int>),
-      decltype(paramA), decltype(paramB), decltype(paramC),
+    const KeyGenClass<
+      Test, 
+      decltype(&Test::compute),
+      decltype(paramA),
+      decltype(paramB),
+      decltype(paramC),
       decltype(paramD)> 
-    computeWrapper = KeyGen(&Test::compute, paramA, paramB, paramC, paramD);*/
-
+    computeW;
+  
 };
-
-template <typename FuncPtr> //, class... FunctionKeys>
-class KeyGenTest
-{
-  private:
-
-    typedef FunctionTraits<typename std::remove_pointer<FuncPtr>::type> KeyFunctionTraits;
-
-    FuncPtr m_baseFunction; 
-
-    std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
-
-  public:
-
-    KeyGenTest(FuncPtr f) 
-      : m_baseFunction(f)
-      //, m_keyIDs({_keys.ID...})
-    {
-      //ConstExprError<2> test;
-    }
-
-    /*template <typename FunctionPointer, 
-      std::enable_if_t<std::is_member_function_pointer<FunctionPointer>::value,bool> = true>
-    KeyGenTest(FunctionPointer _function) // const FunctionKeys&... _keys)
-    {
-      ConstExprError<3> test;
-    }*/
-
-};
-
 
 int main(int argc, char** argv)
 {
@@ -185,21 +158,11 @@ int main(int argc, char** argv)
   CHECK_ALMOST_EQUAL(t0.m_float, 3.14, result);
   CHECK_EQUAL(t0.m_str, "HELLO", result);
 
-  auto testCompute = &Test::compute;
-  (t0.*testCompute)(5,6,7.0,8.0);
+  float val = 3.0;
+  int ret6 = t0.computeW(Test::paramA = 1, Test::paramB = 2, Test::paramC = val, Test::paramD = 4);
 
-  KeyGenTest b(&foo1); //, 5, 6, 7);
-
-  KeyGenTest b2(&Test::compute); //, 5, 6, 7);
-
-  //t0.*computeW(Test::paramA = 1, Test::paramB = 2, Test::paramC = 3, Test::paramD = 4);
-
-  /*Test t1 = Test::buildWrapper(Test::param0 = 5, Test::param1 = 6.28); // TAU GANG REPRESENT
-  CHECK_EQUAL(t1.m_int, 5, result);
-  CHECK_ALMOST_EQUAL(t1.m_float, 6.28, result);
-  CHECK_EQUAL(t0.m_str, "", result);*/
-
-  // FIX SAME KEY
+  CHECK_EQUAL(ret6, t0.m_int + 13, result);
+  CHECK_ALMOST_EQUAL(val, 6.0, result);
 
   return result;
 

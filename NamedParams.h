@@ -513,8 +513,22 @@ class KeyGenClass
       std::tuple<typename FunctionKeys::type...> paddedParameters =
         {process(std::get<Is>(functionKeyTypes), Is)...};
 
-      return m_baseFunction(std::get<Is>(paddedParameters)...);
+      return call(std::get<Is>(paddedParameters)...);
 
+    }
+
+    template <typename _FunctionPtr = FunctionPtr, 
+      std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
+    typename KeyFunctionTraits::ResultType call(FunctionKeys::type... _args) const
+    {
+      return (m_classPtr->*m_baseFunction)(_args...);
+    }
+
+    template <typename _FunctionPtr = FunctionPtr, 
+      std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
+    typename KeyFunctionTraits::ResultType call(FunctionKeys::type... _args) const
+    {
+      return m_baseFunction(_args...);
     }
 
 };
