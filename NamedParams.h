@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <tuple>
 
-#if 0
+#if 1
 
 /**
   * We need to define our own constexpr swap and sort functions for C++17 
@@ -56,7 +56,7 @@ inline constexpr void _sort(Iterator _begin, Iterator _end, Compare _comp)
   {
     auto pivot = _partition(_begin, _end, _comp);
     _sort(_begin, pivot, _comp);
-    _sort(pivot, _end, _comp);
+    _sort(pivot+1, _end, _comp);
   }
 
   return;

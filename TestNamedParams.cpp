@@ -150,7 +150,7 @@ int main(int argc, char** argv)
   CHECK_EQUAL(ret, 7, result);
   CHECK_EQUAL(c, 5, result);
  
-  int ret2 = foo1Wrapper(key0 = 1, key2 = "HELLO", key1 = 1);
+  int ret2 = foo1Wrapper(key2 = "HELLO", key1 = 1, key0 = 1);
   CHECK_EQUAL(ret2, 2, result);
 
   int ret3 = foo1Wrapper(key0 = 1, key2 = "HELLO");
