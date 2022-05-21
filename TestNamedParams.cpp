@@ -19,7 +19,7 @@
 #define UNPAREN(...) __VA_ARGS__ 
 #define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
 #define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
-#define KEYGEN inline static const KeyGen
+#define KEYGEN inline static const KeyGenClass
 
 #define _MEMKEYGEN() 
 #define MEMKEYGEN()
@@ -33,7 +33,7 @@ int foo(float a, int& b)
 KEY((float),0) pa;
 KEY((int&),1) pb;
 //KEYGEN 
-inline static const KeyGen fooWrapper(&foo,pa,pb);
+inline static const KeyGenClass fooWrapper(&foo,pa,pb);
 
 int foo1(int a, std::optional<int> b, std::string c)
 {
@@ -110,7 +110,7 @@ class Test
       }
     }
 
-    KEYGEN buildWrapper = KeyGen(&Test::build, paramI, paramF, paramS);
+    KEYGEN buildWrapper = KeyGenClass(&Test::build, paramI, paramF, paramS);
 
     int compute(int _a, int _b, float& _c, std::optional<int> _d)
     {
@@ -127,7 +127,6 @@ class Test
     }
 
     const KeyGenClass<
-      Test, 
       decltype(&Test::compute),
       decltype(paramA),
       decltype(paramB),
@@ -172,7 +171,7 @@ int main(int argc, char** argv)
   CHECK_EQUAL(t0.m_str, "HELLO", result);
 
   float val = 3.0;
-  int ret6 = t0.computeW(Test::paramA = 1, Test::paramB = 2, Test::paramC = val, Test::paramD = 4);
+  int ret6 = t0.computeW(1, 2, Test::paramC = val, Test::paramD = 4);
 
   CHECK_EQUAL(ret6, t0.m_int + 13, result);
   CHECK_ALMOST_EQUAL(val, 6.0, result);

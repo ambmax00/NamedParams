@@ -280,11 +280,15 @@ class ConstExprError;
  * FunctionTraits taken from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
  * A helper class to get the variable types of a function
  */
-template<typename T> 
+
+template <typename T>
+struct FunctionTraitsBase;
+
+template <typename T> 
 struct FunctionTraits;  
 
 template<typename R, typename ...Args> 
-struct FunctionTraits<R(Args...)>
+struct FunctionTraitsBase<R(Args...)>
 {
     static const size_t nbArgs = sizeof...(Args);
 
@@ -297,6 +301,19 @@ struct FunctionTraits<R(Args...)>
     };
 };
 
+template <class R, typename ...Args>
+struct FunctionTraits<R(Args...)> : public FunctionTraitsBase<R(Args...)> 
+{
+  typedef void ClassType;
+};
+
+template <class C, class R, typename... Args>
+struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraitsBase<R(Args...)>
+{
+  typedef C ClassType;
+};
+
+/*
 // member function pointer
 template<class C, class R, class... Args>
 struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraits<R(C&,Args...)>
@@ -310,9 +327,9 @@ struct FunctionTraits<R(C::*)(Args...) const> : public FunctionTraits<R(C&,Args.
 // member object pointer
 template<class C, class R>
 struct FunctionTraits<R(C::*)> : public FunctionTraits<R(C&)>
-{};
+{};*/
 
-template <class T, class FunctionPtr, class... FunctionKeys> 
+template <class FunctionPtr, class... FunctionKeys> 
 /// CHECK THAT OPTIONAL ARGUMENTS ONLY AFTER REQUIRED?
 /// AND CHECK THAT NUMBER OF KEYS EQUALS NUMBER OF FUNCTION ARGUMENTS
 /// AND CHECK THAT KEYS HAVE CORRECT TYPE, AND CHECK THAT THEY ARE UNIQUE
@@ -320,9 +337,9 @@ class KeyGenClass
 {
   private:
 
-    T* m_classPtr;
-
     typedef FunctionTraits<typename std::remove_pointer<FunctionPtr>::type> KeyFunctionTraits;
+
+    typename KeyFunctionTraits::ClassType* m_classPtr;
 
     FunctionPtr m_baseFunction; 
 
@@ -330,17 +347,17 @@ class KeyGenClass
 
   public:
 
-    template <class D, class _FunctionPtr, class... _FunctionKeys,
+    template <class _FunctionPtr, class... _FunctionKeys,
       std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
-      : m_classPtr(_classPtr)
+    KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys)
+      : m_classPtr(nullptr)
       , m_baseFunction(_function)
     {
     }
 
-    template <class D, class _FunctionPtr, class... _FunctionKeys,
+    template <class _FunctionPtr, class... _FunctionKeys,
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
+    KeyGenClass(KeyFunctionTraits::ClassType* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
     {
@@ -516,22 +533,6 @@ class KeyGenClass
     {
       const inline static int ID = AssignedKey<D>::keyType::ID;
     };
-
-    /* always returns false if first template argument not an assigned key
-    template <class C0, class C1>
-    struct IsConvertibleArgument<C0, C1> : std::false_type {};
-
-    // check conversion of assigned key type type to key type
-    template <class C0, class C1>
-    struct IsConvertibleArgument<AssignedKey<C0>, Key<C1>> 
-      : std::is_convertible<AssignedKey<C0>::keyType::type, Key<C1>::type> 
-    {};
-
-    // check conversion of positional type to key type
-    template <class C0, class C1>
-    struct IsConvertibleArgument<C0, Key<C1>>
-      : std::is_convertible<C0, Key<C1>::type>
-    {};*/
 
     template <class... Any, size_t... Is>
     constexpr inline static std::array<bool,sizeof...(Is)> positionalConversion(std::index_sequence<Is...> const &) 
@@ -734,15 +735,6 @@ class KeyGenClass
 
       return true;
     }
-
-    /*template <class... AssignedKeyPack, std::enable_if_t<
-      areAllAssignedKeys<AssignedKeyPack...>()
-      && evalKeysError<AssignedKeyPack...>(),
-      int> = 0>
-    typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
-    {
-      return internal<AssignedKeyPack...>(_args..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
-    }*/
     
     template <class... Any, std::enable_if_t<evalAnyError<Any...>(), int> = 0>
     typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
@@ -831,61 +823,6 @@ class KeyGenClass
 
     }
 
-    /*
-    template <class... AssignedKeyPack, size_t... Is>
-    typename KeyFunctionTraits::ResultType internal(AssignedKeyPack&... _args, std::index_sequence<Is...> const &) const
-    {
-      std::array<AnyKey,sizeof...(AssignedKeyPack)> passedKeys = {
-        AnyKey{_args.getKeyID(), (void*)&_args}...};
-
-      _sort(passedKeys.begin(), passedKeys.end(), 
-        [](const auto& _p0, const auto& _p1)
-        {
-          return _p0.id < _p1.id;
-        }
-      );
-
-      std::tuple<FunctionKeys...> functionKeyTypes;
-      int offset = 0;
-
-      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> typename KeyType::type
-      { 
-        
-        if constexpr (IsOptional<typename KeyType::type>::value)
-        {
-          // no more passed keys left, return empty optional
-          if (_idx >= sizeof...(_args) + offset)
-          {
-            typename KeyType::type out = std::nullopt;
-            return out;
-          }
-          // function paramter nr. _idx not present, fill woth nullopt
-          if (passedKeys[_idx - offset].id > _key.ID) 
-          {
-            ++offset;
-            typename KeyType::type out = std::nullopt;
-            return out;
-          } 
-        }
-        // same key, transfer ownership
-        if (passedKeys[_idx - offset].id == _key.ID)
-        {
-          auto pAssignedKey = (AssignedKey<KeyType>*)passedKeys[_idx-offset].ptr;
-          return *pAssignedKey->getValue();
-        }
-
-        // SHOULD NOT HAPPEN
-        throw std::runtime_error("This should not happen");
-
-      };
-
-      std::tuple<typename FunctionKeys::type...> paddedParameters =
-        {process(std::get<Is>(functionKeyTypes), Is)...};
-
-      return call(std::get<Is>(paddedParameters)...);
-
-    }*/
-
     template <typename _FunctionPtr = FunctionPtr, 
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
     typename KeyFunctionTraits::ResultType call(FunctionKeys::type... _args) const
@@ -902,17 +839,10 @@ class KeyGenClass
 
 };
 
-template <class FunctionPtr, class... FunctionKeys>
-class KeyGen : public KeyGenClass<void,FunctionPtr,FunctionKeys...>
-{
-  public:
-    KeyGen(FunctionPtr _function, const FunctionKeys&... _keys) 
-      : KeyGenClass<void,FunctionPtr,FunctionKeys...>((void*)nullptr, _function, _keys...)
-    {
-    }
-};
+template <class _FunctionPtr, class... _FunctionKeys>
+KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
 
-template <class D, class _FunctionPtr, class... _FunctionKeys>
-KeyGenClass(D* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<D,_FunctionPtr,_FunctionKeys...>;
+template <class T*, class _FunctionPtr, class... _FunctionKeys>
+KeyGenClass(T* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
 
 #endif // NAMED_PARAMS_H
