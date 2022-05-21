@@ -141,9 +141,6 @@ int main(int argc, char** argv)
 {
   int result = 0;
 
-  std::cout << UNIQUE << std::endl;
-  std::cout << UNIQUE << std::endl;
-
   int c = 3;
 
   int ret = fooWrapper(pb = c, pa = 2);
@@ -159,8 +156,10 @@ int main(int argc, char** argv)
   int ret4 = foo2Wrapper(key0 = 1, key3 = 3);
   CHECK_EQUAL(ret4, 4, result);
 
-  //ret4 = funcWrap(1,c,paramD=5);
-  //CHECK_EQUAL(ret4, 3, result);
+  int d = 5;
+
+  ret4 = funcWrap(1,d,paramD=5,paramC=4);
+  CHECK_EQUAL(ret4, 15, result);
 
   //int retNone = foo2Wrapper(key0 = 1, key0 =2);
 

@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <tuple>
 
+#include <iostream>
+
 #if 1
 
 /**
@@ -694,7 +696,7 @@ class KeyGenClass
     
     }
     
-    template <class... Any, std::enable_if_t<!areAllAssignedKeys<Any...>(),bool> = true>
+    template <class... Any>
     constexpr inline static bool evalAnyError()
     {
       EvalReturn constexpr error = evalAny<Any...>();
@@ -733,23 +735,19 @@ class KeyGenClass
       return true;
     }
 
-    template <class... AssignedKeyPack, std::enable_if_t<
+    /*template <class... AssignedKeyPack, std::enable_if_t<
       areAllAssignedKeys<AssignedKeyPack...>()
       && evalKeysError<AssignedKeyPack...>(),
       int> = 0>
     typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
     {
       return internal<AssignedKeyPack...>(_args..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
-    }
+    }*/
     
-    template <class... Any, std::enable_if_t<
-      !areAllAssignedKeys<Any...>()
-      && evalAnyError<Any...>(), 
-      int> = 0>
+    template <class... Any, std::enable_if_t<evalAnyError<Any...>(), int> = 0>
     typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
     {
-      ConstExprError<0> NOT_YET_IMPLEMENTED;
-      return 0;
+      return internal2<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
     }
 
     struct AnyKey 
@@ -758,6 +756,82 @@ class KeyGenClass
       void* ptr;
     };
 
+    template <class... Any, size_t... Is>
+    typename KeyFunctionTraits::ResultType internal2(Any&&... _args, std::index_sequence<Is...> const &) const
+    {
+      auto constexpr group = getNb<Any...>();
+      constexpr int nbPositionals = group.first;
+      constexpr int nbAssignedKeys = group.second;
+      constexpr int nbPassedArgs = sizeof...(Any);
+      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
+
+      std::array<AnyKey,nbPassedArgs> passedKeys = 
+      {
+        AnyKey{GetArgumentID<Any>::ID, (void*)&_args}...
+      };
+
+      _sort(passedKeys.begin() + nbPositionals, passedKeys.end(), 
+        [](const auto& _p0, const auto& _p1)
+        {
+          return _p0.id < _p1.id;
+        }
+      );
+
+      for (auto s : passedKeys) 
+      {
+        std::cout << s.id << std::endl;
+      }
+
+      std::tuple<FunctionKeys...> functionKeyTypes;
+      int offset = 0;
+
+      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> typename KeyType::type
+      { 
+        if (_idx >= nbPositionals) 
+        {
+          if constexpr (IsOptional<typename KeyType::type>::value)
+          {
+            // no more passed keys left, return empty optional
+            if (_idx >= sizeof...(_args) + offset)
+            {
+              typename KeyType::type out = std::nullopt;
+              return out;
+            }
+            // function paramter nr. _idx not present, fill with nullopt
+            if (passedKeys[_idx - offset].id > _key.ID) 
+            {
+              ++offset;
+              typename KeyType::type out = std::nullopt;
+              return out;
+            } 
+          }
+          // same key, transfer ownership
+          if (passedKeys[_idx - offset].id == _key.ID)
+          {
+            auto pAssignedKey = (AssignedKey<KeyType>*)passedKeys[_idx-offset].ptr;
+            return *pAssignedKey->getValue();
+          }
+        }
+        else 
+        {
+          // positionals are guaranteed to be in order and not skip any arguments
+          // remove reference to avoid pointer to reference
+          return *((typename std::remove_reference<typename KeyType::type>::type*)passedKeys[_idx-offset].ptr);
+        }
+
+        // SHOULD NOT HAPPEN
+        throw std::runtime_error("This should not happen");
+
+      };
+
+      std::tuple<typename FunctionKeys::type...> paddedParameters =
+        {process(std::get<Is>(functionKeyTypes), Is)...};
+
+      return call(std::get<Is>(paddedParameters)...);
+
+    }
+
+    /*
     template <class... AssignedKeyPack, size_t... Is>
     typename KeyFunctionTraits::ResultType internal(AssignedKeyPack&... _args, std::index_sequence<Is...> const &) const
     {
@@ -810,7 +884,7 @@ class KeyGenClass
 
       return call(std::get<Is>(paddedParameters)...);
 
-    }
+    }*/
 
     template <typename _FunctionPtr = FunctionPtr, 
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
