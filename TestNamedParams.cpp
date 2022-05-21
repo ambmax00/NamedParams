@@ -59,6 +59,17 @@ std::string foo3(std::optional<std::string> s)
   return s ? *s : "";
 }
 
+int func(int a, int& b, std::optional<int> c, std::optional<int> d)
+{
+  return a + b + (c ? *c : 0) + (d ? *d : 0);
+}
+
+KEY((int),10) paramA;
+KEY((int&),11) paramB;
+KEYOPT((int),12) paramC;
+KEYOPT((int),13) paramD;
+KEYGEN funcWrap(&func, paramA, paramB, paramC, paramD);
+
 KEYOPT((std::string),7) key6;
 KEYGEN foo3Wrapper(&foo3, key6);
 
@@ -147,6 +158,9 @@ int main(int argc, char** argv)
 
   int ret4 = foo2Wrapper(key0 = 1, key3 = 3);
   CHECK_EQUAL(ret4, 4, result);
+
+  //ret4 = funcWrap(1,c,paramD=5);
+  //CHECK_EQUAL(ret4, 3, result);
 
   //int retNone = foo2Wrapper(key0 = 1, key0 =2);
 

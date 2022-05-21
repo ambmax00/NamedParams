@@ -8,15 +8,7 @@
 #include <stdexcept>
 #include <tuple>
 
-#if __cplusplus < 201703L
-#error Minimum C++17 is required for NamedParams
-#endif
-
-#if __cplusplus >= 202002L
-#define CXX20
-#endif
-
-#ifndef CXX20
+#if 0
 
 /**
   * We need to define our own constexpr swap and sort functions for C++17 
@@ -136,12 +128,40 @@ struct IsKey : public std::false_type {};
 template <class T, int N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
+template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool> = true>
+class AssignedKey;
+
+template <class T>
+struct IsAssignedKey : public std::false_type {};
+
+template <class T>
+struct IsAssignedKey<AssignedKey<T>> : public std::true_type {};
+
+template <class... AssignedKeyPack>
+constexpr inline bool areAllAssignedKeys() 
+{
+  const std::array<bool,sizeof...(AssignedKeyPack)> isKey = 
+  {
+    IsAssignedKey<AssignedKeyPack>::value...  
+  };
+
+  for (auto a : isKey)
+  {
+    if (!a) 
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * AssignedKey is the result of assigning(=) a Key to a value.
  * If the Keytype is a reference, it contains a pointer to the variable 
  * the key was assigned to. If not, it contains a copy of the variable
  */
-template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool> = true>
+template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool>>
 class AssignedKey
 {
   private:
@@ -224,7 +244,7 @@ class AssignedKey
  * The Key class does not keep any record of the variable it is assigned to,
  * but delegates the work to AssignedKey.
  */
-template <typename T, int UNIQUE_ID> 
+template <typename T, int UNIQUE_ID>  // disable negative numbers
 class Key
 {
   private:
@@ -251,7 +271,7 @@ class Key
 /**
  * Helper class to force a compile error
  */
-template <int i>
+template <int i, typename T = void, typename D = void>
 class ConstExprError;
 
 /**
@@ -290,7 +310,10 @@ template<class C, class R>
 struct FunctionTraits<R(C::*)> : public FunctionTraits<R(C&)>
 {};
 
-template <class T, class FunctionPtr, class... FunctionKeys>
+template <class T, class FunctionPtr, class... FunctionKeys> 
+/// CHECK THAT OPTIONAL ARGUMENTS ONLY AFTER REQUIRED?
+/// AND CHECK THAT NUMBER OF KEYS EQUALS NUMBER OF FUNCTION ARGUMENTS
+/// AND CHECK THAT KEYS HAVE CORRECT TYPE, AND CHECK THAT THEY ARE UNIQUE
 class KeyGenClass
 {
   private:
@@ -328,15 +351,25 @@ class KeyGenClass
       return m_baseFunction;
     }
 
+    enum class ErrorType
+    {
+      NONE = 0,
+      MISSING_KEY = 1,
+      INVALID_KEY = 2,
+      MULTIPLE_KEYS = 3,
+      POSITION = 4,
+      TOO_MANY_ARGS = 5,
+      CONVERSION = 6
+    };
+
     struct EvalReturn
     {
-      bool success;
-      int type;
+      ErrorType errorType;
       int id;
     };
 
     template <class... AssignedKeyPack>
-    constexpr static inline EvalReturn eval()
+    constexpr static inline EvalReturn evalKeys()
     {
       constexpr int nbAssignedKeys = sizeof...(AssignedKeyPack);
       constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
@@ -358,12 +391,12 @@ class KeyGenClass
 
       if (nbRequiredKeys != 0 && nbAssignedKeys == 0)
       {
-        return EvalReturn{false, 2, 0};
+        return EvalReturn{ErrorType::MISSING_KEY, 0};
       }    
 
       if (nbRequiredKeys == 0 && nbAssignedKeys == 0) 
       {
-        return EvalReturn{true, 0, 0};
+        return EvalReturn{ErrorType::NONE, 0};
       } 
 
       // check for multiple keys of same type
@@ -371,12 +404,12 @@ class KeyGenClass
       {
         if (passedKeys[i-1] == passedKeys[i])
         {
-          return EvalReturn{false, 3, passedKeys[i-1]};
+          return EvalReturn{ErrorType::MULTIPLE_KEYS, passedKeys[i-1]};
         }
       }
 
       _sort(passedKeys.begin(), passedKeys.end());
-      EvalReturn evalReturn = {true, 0, 0};
+      EvalReturn evalReturn = {ErrorType::NONE, 0};
       int offset = 0;
 
       for (int iArg = 0; iArg < nbFunctionKeys; ++iArg)
@@ -384,8 +417,7 @@ class KeyGenClass
         // no more passed keys to parse, and function key is NOT optional
         if (iArg >= nbAssignedKeys+offset && !functionKeyIsOptional[iArg])
         {
-          evalReturn.success = false;
-          evalReturn.type = 0;
+          evalReturn.errorType = ErrorType::MISSING_KEY;
           evalReturn.id = functionKeys[iArg];
           break;
         }
@@ -397,16 +429,14 @@ class KeyGenClass
         // function key should never be larger than the pass key
         else if (functionKeys[iArg] > passedKeys[iArg-offset])
         {
-          evalReturn.success = false;
-          evalReturn.type = 1;
+          evalReturn.errorType = ErrorType::INVALID_KEY;
           evalReturn.id = passedKeys[iArg-offset];
           break;
         }
-        // if the function key is smaller, some key might be missing - check if optional
+        // if the function key id is smaller, some key might be missing - check if optional
         else if (functionKeys[iArg] < passedKeys[iArg-offset] && !functionKeyIsOptional[iArg])
         {
-          evalReturn.success = false;
-          evalReturn.type = 0;
+          evalReturn.errorType = ErrorType::MISSING_KEY;
           evalReturn.id = functionKeys[iArg];
           break;
         }
@@ -420,41 +450,306 @@ class KeyGenClass
       return evalReturn;
     }
 
-    template <class... AssignedKeyPack>
-    constexpr static inline int evalError()
+    template <class... AssignedKeyPack, 
+      std::enable_if_t<areAllAssignedKeys<AssignedKeyPack...>(),bool> = true>
+    constexpr static inline bool evalKeysError()
     {
-      constexpr EvalReturn error = eval<AssignedKeyPack...>();
+      constexpr EvalReturn error = evalKeys<AssignedKeyPack...>();
 
-      if constexpr (!error.success && error.type == 0) 
+      if constexpr (error.errorType == ErrorType::MISSING_KEY)
       {
         ConstExprError<error.id> MISSING_KEY;
+        return false;
       }
-
-      if constexpr (!error.success && error.type == 1)
+      else if constexpr (error.errorType == ErrorType::INVALID_KEY)
       {
         ConstExprError<error.id> INVALID_KEY;
+        return false;
       }
-
-      if constexpr (!error.success && error.type == 2)
-      {
-        ConstExprError<error.id> MISSING_KEY;
-      }
-
-      if constexpr (!error.success && error.type == 3)
+      else if constexpr (error.errorType == ErrorType::MULTIPLE_KEYS)
       {
         ConstExprError<error.id> MULTIPLE_KEYS_OF_SAME_TYPE;
+        return false;
       }
-    
-      return 0;
+      else
+      {
+        return true;
+      }
+
     }
 
+    template <class... Any>
+    constexpr inline static std::pair<int,int> getNb() 
+    {
+      std::array<bool,sizeof...(Any)> types = 
+      {
+        IsAssignedKey<Any>::value...
+      };
+
+      std::pair<int,int> group = std::make_pair(0,0);
+      for (auto t : types)
+      {
+        if (!t)
+        {
+          group.first++;
+        }
+        else 
+        {
+          group.second++;
+        }
+      }
+
+      return group;
+
+    }
+
+    template <class D>
+    struct GetArgumentID 
+    {
+      const inline static int ID = -1;
+    };
+
+    template <class D>
+    struct GetArgumentID<AssignedKey<D>>
+    {
+      const inline static int ID = AssignedKey<D>::keyType::ID;
+    };
+
+    /* always returns false if first template argument not an assigned key
+    template <class C0, class C1>
+    struct IsConvertibleArgument<C0, C1> : std::false_type {};
+
+    // check conversion of assigned key type type to key type
+    template <class C0, class C1>
+    struct IsConvertibleArgument<AssignedKey<C0>, Key<C1>> 
+      : std::is_convertible<AssignedKey<C0>::keyType::type, Key<C1>::type> 
+    {};
+
+    // check conversion of positional type to key type
+    template <class C0, class C1>
+    struct IsConvertibleArgument<C0, Key<C1>>
+      : std::is_convertible<C0, Key<C1>::type>
+    {};*/
+
+    template <class... Any, size_t... Is>
+    constexpr inline static std::array<bool,sizeof...(Is)> positionalConversion(std::index_sequence<Is...> const &) 
+    {
+      constexpr std::array<bool,sizeof...(Is)> out = 
+      { 
+        std::is_convertible<
+          typename std::tuple_element<Is, std::tuple<Any...>>::type, 
+          typename KeyFunctionTraits::arg<Is>::type
+        >::value...
+      };
+
+      // BETTER ERROR HANDLING: SHOW WHICH TYPES CANNOT BE CONVERTED
+
+      return out;
+    }
+    
+    template <class... Any>
+    constexpr inline static EvalReturn evalAny()
+    {
+
+      // get number of different arguments
+      constexpr auto group = getNb<Any...>();
+      constexpr int nbPositionalArgs = group.first;
+      constexpr int nbAssignedKeys = group.second;
+      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
+      constexpr int nbPassedArgs = sizeof...(Any);
+
+      // check for too many args
+      if (nbPassedArgs > nbFunctionKeys)
+      {
+        return EvalReturn{ErrorType::TOO_MANY_ARGS, 0};
+      }
+
+      // check if positional arguments are grouped together
+      constexpr std::array<bool,sizeof...(Any)> isKey = 
+      {
+        IsAssignedKey<Any>::value...
+      };
+
+      for (int i = 1; i < nbPassedArgs; ++i)
+      {
+        // key should not follow positional argument
+        if (isKey[i-1] && !isKey[i])
+        {
+          return EvalReturn{ErrorType::POSITION, i};
+        }
+      }
+
+      // check if positional arguments are correct types or convertible (Keys are set to always true)
+      std::array<bool,nbPositionalArgs> positionalIsConvertible = positionalConversion<Any...>(
+        std::make_index_sequence<nbPositionalArgs>());
+
+      for (int i = 0; i < nbPositionalArgs; ++i)
+      {
+        if (!positionalIsConvertible[i])
+        {
+          return EvalReturn{ErrorType::CONVERSION, i};
+        }
+      }
+
+      // check if keys are all correct types <----
+      // maybe in the constructor directly, probably better?
+
+
+      // get IDs of assigned keys (-1 for non-keys)
+      std::array<int,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
+    
+      // get IDs of true function keys
+      std::array<int,nbFunctionKeys> functionKeyIDs = { FunctionKeys::ID... };
+
+      std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
+        IsOptional<typename FunctionKeys::type>::value...};
+
+      int nbRequiredKeys = 0;
+      for (auto fOpt : functionKeyIsOptional)
+      { 
+        nbRequiredKeys += (fOpt) ? 0 : 1;
+      }
+
+      // if no args passed, but function has required keys, throw error 
+      // (e.g. funcWrapper() -> func(int))
+      if (nbRequiredKeys != 0 && nbPassedArgs == 0)
+      {
+        return EvalReturn{ErrorType::MISSING_KEY, 0}; //<--- fix number
+      }
+
+      // if func only has optional arguments, and no args were passed we can return immediately
+      // e.g. funcWrapper() -> func(std::optional<int>)
+      if (nbRequiredKeys == 0 && nbPassedArgs == 0)
+      {
+        return EvalReturn{ErrorType::NONE, 0};
+      }
+
+      // if all required keys in positional arguments, and no keys -> return
+      // e.g. funcWrapper(1,2,3) -> func(int, int, std::optional)
+      if (nbRequiredKeys <= nbPositionalArgs && nbAssignedKeys == 0)
+      {
+        return EvalReturn{ErrorType::NONE, 0};
+      }
+
+      // check for multiple keys of same type
+      for (int i = nbPositionalArgs+1; i < nbPassedArgs; ++i)
+      {
+        if (passedKeyIDs[i-1] == passedKeyIDs[i])
+        {
+          return EvalReturn{ErrorType::MULTIPLE_KEYS, passedKeyIDs[i-1]};
+        }
+      }
+
+      // check if unknown key present
+      for (int i = nbPositionalArgs; i < nbPassedArgs; ++i)
+      {
+        bool found = false;
+        for (int j = 0; j < nbFunctionKeys; ++j)
+        {
+          if (passedKeyIDs[i] == functionKeyIDs[j])
+          {
+            found = true;
+          }
+        }
+        if (!found) 
+        {
+          return EvalReturn{ErrorType::INVALID_KEY,i};
+        }
+      }
+
+      // now sort the Key IDs for checking correct keys
+      _sort(passedKeyIDs.begin(), passedKeyIDs.end());
+      int offset = 0;
+
+      for (int iArg = nbPositionalArgs; iArg < nbFunctionKeys; ++iArg)
+      {
+        // no more passed keys to parse, and function key is NOT optional
+        if (iArg >= nbPassedArgs+offset && !functionKeyIsOptional[iArg])
+        {
+          return EvalReturn{ErrorType::MISSING_KEY, functionKeyIDs[iArg]};
+        }
+        // no more passed keys to parse and function key IS optional 
+        else if (iArg >= nbPassedArgs+offset && functionKeyIsOptional[iArg])
+        {
+          continue;
+        }
+        // function key should never be larger than the pass key
+        else if (functionKeyIDs[iArg] > passedKeyIDs[iArg-offset])
+        {
+          return EvalReturn{ErrorType::INVALID_KEY, passedKeyIDs[iArg-offset]};
+        }
+        // if the function key is smaller, some key might be missing - check if optional
+        else if (functionKeyIDs[iArg] < passedKeyIDs[iArg-offset] && !functionKeyIsOptional[iArg])
+        {
+          return EvalReturn{ErrorType::MISSING_KEY, functionKeyIDs[iArg]};
+        }
+        // same as above. but incrementing offset
+        else if (functionKeyIDs[iArg] < passedKeyIDs[iArg-offset] && functionKeyIsOptional[iArg])
+        {
+          offset++;
+        }
+      }
+
+      return EvalReturn{ErrorType::NONE, 0};
+    
+    }
+    
+    template <class... Any, std::enable_if_t<!areAllAssignedKeys<Any...>(),bool> = true>
+    constexpr inline static bool evalAnyError()
+    {
+      EvalReturn constexpr error = evalAny<Any...>();
+
+      if constexpr (error.errorType == ErrorType::MISSING_KEY)
+      {
+        ConstExprError<error.id> MISSING_KEY;
+        return false;
+      }
+      else if constexpr (error.errorType == ErrorType::INVALID_KEY)
+      {
+        ConstExprError<error.id> INVALID_KEY;
+        return false;
+      }
+      else if constexpr (error.errorType == ErrorType::MULTIPLE_KEYS)
+      {
+        ConstExprError<error.id> MULTIPLE_KEYS_OF_SAME_TYPE;
+        return false;
+      }
+      else if constexpr (error.errorType == ErrorType::POSITION)
+      {
+        ConstExprError<error.id> POSITIONAL_CANNOT_FOLLOW_OPTIONAL_ARGUMENT;
+        return false;
+      }
+      else if constexpr (error.errorType == ErrorType::CONVERSION)
+      {
+        ConstExprError<error.id> ARGUMENT_CANNOT_BE_CONVERTED;
+        return true;
+      }
+      else if constexpr (error.errorType == ErrorType::TOO_MANY_ARGS)
+      {
+        ConstExprError<error.id> TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION;
+        return true;
+      }
+
+      return true;
+    }
 
     template <class... AssignedKeyPack, std::enable_if_t<
-    evalError<AssignedKeyPack...>() == 0,
-    int> = 0>
+      areAllAssignedKeys<AssignedKeyPack...>()
+      && evalKeysError<AssignedKeyPack...>(),
+      int> = 0>
     typename KeyFunctionTraits::ResultType operator()(AssignedKeyPack... _args) const 
     {
       return internal<AssignedKeyPack...>(_args..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
+    }
+    
+    template <class... Any, std::enable_if_t<
+      !areAllAssignedKeys<Any...>()
+      && evalAnyError<Any...>(), 
+      int> = 0>
+    typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
+    {
+      ConstExprError<0> NOT_YET_IMPLEMENTED;
+      return 0;
     }
 
     struct AnyKey 
