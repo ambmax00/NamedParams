@@ -1,4 +1,4 @@
-#include "NamedParams.h"
+#include "../NamedParams.h"
 #include <iostream>
 #include <string>
 
