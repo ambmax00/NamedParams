@@ -16,11 +16,6 @@
     _RETURN += 1; \
   } 
 
-#define UNPAREN(...) __VA_ARGS__ 
-#define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
-#define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
-#define KEYGEN inline static const KeyGenClass
-
 #define _MEMKEYGEN() 
 #define MEMKEYGEN()
  
@@ -37,6 +32,7 @@ inline static const KeyGenClass fooWrapper(&foo,pa,pb);
 
 int foo1(int a, std::optional<int> b, std::string c)
 {
+  c += "c";
   return (b) ? *b + a : a;
 }
 
@@ -136,7 +132,7 @@ class Test
   
 };
 
-int main(int argc, char** argv)
+int main()
 {
   int result = 0;
 

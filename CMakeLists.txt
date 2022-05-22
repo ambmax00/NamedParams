@@ -8,6 +8,8 @@ enable_testing()
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_CXX_STANDARD 17)
 
+add_compile_options(-Wall -Wextra -pedantic)
+
 add_executable(TestNamedParamsExe test/TestNamedParams.cpp)
 
 add_test(

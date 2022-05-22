@@ -108,8 +108,9 @@ struct unique_id {
    depending on that non-type template which leads to 'name' to have a different
    value at each deduction
 */
+/*
 #define FORCE_UNIQUE(name...) id_value name = unique_id([] {})
-#define UNIQUE *unique_id([]{})
+#define UNIQUE *unique_id([]{})*/
 
 /**
   * Define stucts for identifying optional and key
@@ -349,7 +350,7 @@ class KeyGenClass
 
     template <class _FunctionPtr, class... _FunctionKeys,
       std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys)
+    KeyGenClass(_FunctionPtr _function, [[maybe_unused]] const _FunctionKeys&... _keys)
       : m_classPtr(nullptr)
       , m_baseFunction(_function)
     {
@@ -358,7 +359,7 @@ class KeyGenClass
     template <class _FunctionPtr, class... _FunctionKeys,
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
     KeyGenClass(typename KeyFunctionTraits::ClassType* _classPtr, _FunctionPtr _function, 
-      const _FunctionKeys&... _keys)
+      [[maybe_unused]] const _FunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
     {
@@ -799,9 +800,7 @@ class KeyGenClass
     {
       auto constexpr group = getNb<Any...>();
       constexpr int nbPositionals = group.first;
-      constexpr int nbAssignedKeys = group.second;
       constexpr int nbPassedArgs = sizeof...(Any);
-      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
 
       std::array<AnyKey,nbPassedArgs> passedKeys = 
       {
