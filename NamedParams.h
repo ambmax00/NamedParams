@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-#if 1
+#ifndef USE_CXX_20
 
 /**
   * We need to define our own constexpr swap and sort functions for C++17 
@@ -357,7 +357,8 @@ class KeyGenClass
 
     template <class _FunctionPtr, class... _FunctionKeys,
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(KeyFunctionTraits::ClassType* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys)
+    KeyGenClass(typename KeyFunctionTraits::ClassType* _classPtr, _FunctionPtr _function, 
+      const _FunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
     {
@@ -825,14 +826,14 @@ class KeyGenClass
 
     template <typename _FunctionPtr = FunctionPtr, 
       std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(FunctionKeys::type... _args) const
+    typename KeyFunctionTraits::ResultType call(typename FunctionKeys::type... _args) const
     {
       return (m_classPtr->*m_baseFunction)(_args...);
     }
 
     template <typename _FunctionPtr = FunctionPtr, 
       std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(FunctionKeys::type... _args) const
+    typename KeyFunctionTraits::ResultType call(typename FunctionKeys::type... _args) const
     {
       return m_baseFunction(_args...);
     }
