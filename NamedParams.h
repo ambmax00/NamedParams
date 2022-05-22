@@ -845,4 +845,9 @@ KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClas
 template <class T*, class _FunctionPtr, class... _FunctionKeys>
 KeyGenClass(T* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
 
+#define UNPAREN(...) __VA_ARGS__ 
+#define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
+#define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
+#define KEYGEN inline static const KeyGenClass
+
 #endif // NAMED_PARAMS_H
