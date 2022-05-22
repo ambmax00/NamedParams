@@ -542,7 +542,7 @@ class KeyGenClass
       { 
         std::is_convertible<
           typename std::tuple_element<Is, std::tuple<Any...>>::type, 
-          typename KeyFunctionTraits::arg<Is>::type
+          typename KeyFunctionTraits::template arg<Is>::type
         >::value...
       };
 
@@ -749,6 +749,51 @@ class KeyGenClass
       void* ptr;
     };
 
+    template <class TKey, class TArray>
+    typename TKey::type process(TKey& _key, 
+                                int _idx, 
+                                int _nbPositionals, 
+                                int _nbArguments,
+                                TArray& _passedKeys,
+                                int& _offset) const
+    { 
+      if (_idx >= _nbPositionals) 
+      {
+        if constexpr (IsOptional<typename TKey::type>::value)
+        {
+          // no more passed keys left, return empty optional
+          if (_idx >= _nbArguments + _offset)
+          {
+            typename TKey::type out = std::nullopt;
+            return out;
+          }
+          // function paramter nr. _idx not present, fill with nullopt
+          if (_passedKeys[_idx - _offset].id > _key.ID) 
+          {
+            ++_offset;
+            typename TKey::type out = std::nullopt;
+            return out;
+          } 
+        }
+        // same key, transfer ownership
+        if (_passedKeys[_idx - _offset].id == _key.ID)
+        {
+          auto pAssignedKey = (AssignedKey<TKey>*)_passedKeys[_idx-_offset].ptr;
+          return *pAssignedKey->getValue();
+        }
+      }
+      else 
+      {
+        // positionals are guaranteed to be in order and not skip any arguments
+        // remove reference to avoid pointer to reference
+        return *((typename std::remove_reference<typename TKey::type>::type*)
+          _passedKeys[_idx-_offset].ptr);
+      }
+
+      // SHOULD NOT HAPPEN
+      throw std::runtime_error("This should not happen");
+    }
+
     template <class... Any, size_t... Is>
     typename KeyFunctionTraits::ResultType internal2(Any&&... _args, std::index_sequence<Is...> const &) const
     {
@@ -778,47 +823,9 @@ class KeyGenClass
       std::tuple<FunctionKeys...> functionKeyTypes;
       int offset = 0;
 
-      auto process = [&] <class KeyType> (KeyType& _key, int _idx) -> typename KeyType::type
-      { 
-        if (_idx >= nbPositionals) 
-        {
-          if constexpr (IsOptional<typename KeyType::type>::value)
-          {
-            // no more passed keys left, return empty optional
-            if (_idx >= sizeof...(_args) + offset)
-            {
-              typename KeyType::type out = std::nullopt;
-              return out;
-            }
-            // function paramter nr. _idx not present, fill with nullopt
-            if (passedKeys[_idx - offset].id > _key.ID) 
-            {
-              ++offset;
-              typename KeyType::type out = std::nullopt;
-              return out;
-            } 
-          }
-          // same key, transfer ownership
-          if (passedKeys[_idx - offset].id == _key.ID)
-          {
-            auto pAssignedKey = (AssignedKey<KeyType>*)passedKeys[_idx-offset].ptr;
-            return *pAssignedKey->getValue();
-          }
-        }
-        else 
-        {
-          // positionals are guaranteed to be in order and not skip any arguments
-          // remove reference to avoid pointer to reference
-          return *((typename std::remove_reference<typename KeyType::type>::type*)passedKeys[_idx-offset].ptr);
-        }
-
-        // SHOULD NOT HAPPEN
-        throw std::runtime_error("This should not happen");
-
-      };
-
-      std::tuple<typename FunctionKeys::type...> paddedParameters =
-        {process(std::get<Is>(functionKeyTypes), Is)...};
+      std::tuple<typename FunctionKeys::type...> paddedParameters = {
+        process(std::get<Is>(functionKeyTypes), Is, nbPositionals, nbPassedArgs, passedKeys, 
+        offset)... };
 
       return call(std::get<Is>(paddedParameters)...);
 
