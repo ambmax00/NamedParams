@@ -31,19 +31,22 @@ template <class Iterator, class Compare>
 inline constexpr Iterator _partition(Iterator _begin, Iterator _end, Compare _comp)
 {
   Iterator pivot = _end - 1; 
-  Iterator smallest = _begin - 1;
+  int idxSmallest = -1;
 
   for (auto it = _begin; it < pivot; ++it)
   {
     if (_comp(*it,*pivot))
     {
-      smallest++;
-      _swap(*smallest,*it);
+      ++idxSmallest;
+      _swap(*(_begin + idxSmallest),*it);
     }
   }
 
-  _swap(*(smallest+1), *(_end-1));
-  return smallest+1;
+  Iterator it = _begin + (idxSmallest + 1);
+
+  _swap(*it, *(_end-1));
+  return it;
+  
 }
 
 template <class Iterator, class Compare>
@@ -54,7 +57,7 @@ inline constexpr void _sort(Iterator _begin, Iterator _end, Compare _comp)
     return;
   }
 
-  if (_begin < _end-1)
+  if (_begin < _end-1) // skip if only one element
   {
     auto pivot = _partition(_begin, _end, _comp);
     _sort(_begin, pivot, _comp);
@@ -389,116 +392,6 @@ class KeyGenClass
       int id;
     };
 
-    template <class... AssignedKeyPack>
-    constexpr static inline EvalReturn evalKeys()
-    {
-      constexpr int nbAssignedKeys = sizeof...(AssignedKeyPack);
-      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
-
-      std::array<int,nbAssignedKeys> passedKeys = {AssignedKeyPack::keyType::ID...};
-      std::array<int,nbFunctionKeys> functionKeys = {FunctionKeys::ID...};
-
-      std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
-        IsOptional<typename FunctionKeys::type>::value...};
-      std::array<bool,nbAssignedKeys> passedKeyIsOptional = {
-        IsOptional<typename AssignedKeyPack::keyType::type>::value...};
-
-      // check for empty assigned keys
-      int nbRequiredKeys = 0;
-      for (auto b : functionKeyIsOptional)
-      {
-        nbRequiredKeys += (b) ? 0 : 1;
-      }
-
-      if (nbRequiredKeys != 0 && nbAssignedKeys == 0)
-      {
-        return EvalReturn{ErrorType::MISSING_KEY, 0};
-      }    
-
-      if (nbRequiredKeys == 0 && nbAssignedKeys == 0) 
-      {
-        return EvalReturn{ErrorType::NONE, 0};
-      } 
-
-      // check for multiple keys of same type
-      for (int i = 1; i < nbAssignedKeys; ++i)
-      {
-        if (passedKeys[i-1] == passedKeys[i])
-        {
-          return EvalReturn{ErrorType::MULTIPLE_KEYS, passedKeys[i-1]};
-        }
-      }
-
-      _sort(passedKeys.begin(), passedKeys.end());
-      EvalReturn evalReturn = {ErrorType::NONE, 0};
-      int offset = 0;
-
-      for (int iArg = 0; iArg < nbFunctionKeys; ++iArg)
-      {
-        // no more passed keys to parse, and function key is NOT optional
-        if (iArg >= nbAssignedKeys+offset && !functionKeyIsOptional[iArg])
-        {
-          evalReturn.errorType = ErrorType::MISSING_KEY;
-          evalReturn.id = functionKeys[iArg];
-          break;
-        }
-        // no more passed keys to parse and function key IS optional 
-        else if (iArg >= nbAssignedKeys+offset && functionKeyIsOptional[iArg])
-        {
-          continue;
-        }
-        // function key should never be larger than the pass key
-        else if (functionKeys[iArg] > passedKeys[iArg-offset])
-        {
-          evalReturn.errorType = ErrorType::INVALID_KEY;
-          evalReturn.id = passedKeys[iArg-offset];
-          break;
-        }
-        // if the function key id is smaller, some key might be missing - check if optional
-        else if (functionKeys[iArg] < passedKeys[iArg-offset] && !functionKeyIsOptional[iArg])
-        {
-          evalReturn.errorType = ErrorType::MISSING_KEY;
-          evalReturn.id = functionKeys[iArg];
-          break;
-        }
-        // same as above. but incrementing offset
-        else if (functionKeys[iArg] < passedKeys[iArg-offset] && functionKeyIsOptional[iArg])
-        {
-          offset++;
-        }
-      }
-
-      return evalReturn;
-    }
-
-    template <class... AssignedKeyPack, 
-      std::enable_if_t<areAllAssignedKeys<AssignedKeyPack...>(),bool> = true>
-    constexpr static inline bool evalKeysError()
-    {
-      constexpr EvalReturn error = evalKeys<AssignedKeyPack...>();
-
-      if constexpr (error.errorType == ErrorType::MISSING_KEY)
-      {
-        ConstExprError<error.id> MISSING_KEY;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::INVALID_KEY)
-      {
-        ConstExprError<error.id> INVALID_KEY;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::MULTIPLE_KEYS)
-      {
-        ConstExprError<error.id> MULTIPLE_KEYS_OF_SAME_TYPE;
-        return false;
-      }
-      else
-      {
-        return true;
-      }
-
-    }
-
     template <class... Any>
     constexpr inline static std::pair<int,int> getNb() 
     {
@@ -583,7 +476,7 @@ class KeyGenClass
           return EvalReturn{ErrorType::POSITION, i};
         }
       }
-
+      
       // check if positional arguments are correct types or convertible (Keys are set to always true)
       std::array<bool,nbPositionalArgs> positionalIsConvertible = positionalConversion<Any...>(
         std::make_index_sequence<nbPositionalArgs>());
@@ -595,10 +488,9 @@ class KeyGenClass
           return EvalReturn{ErrorType::CONVERSION, i};
         }
       }
-
+      
       // check if keys are all correct types <----
       // maybe in the constructor directly, probably better?
-
 
       // get IDs of assigned keys (-1 for non-keys)
       std::array<int,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
@@ -614,7 +506,7 @@ class KeyGenClass
       { 
         nbRequiredKeys += (fOpt) ? 0 : 1;
       }
-
+      
       // if no args passed, but function has required keys, throw error 
       // (e.g. funcWrapper() -> func(int))
       if (nbRequiredKeys != 0 && nbPassedArgs == 0)
@@ -665,7 +557,7 @@ class KeyGenClass
       // now sort the Key IDs for checking correct keys
       _sort(passedKeyIDs.begin(), passedKeyIDs.end());
       int offset = 0;
-
+      
       for (int iArg = nbPositionalArgs; iArg < nbFunctionKeys; ++iArg)
       {
         // no more passed keys to parse, and function key is NOT optional
@@ -702,7 +594,7 @@ class KeyGenClass
     template <class... Any>
     constexpr inline static bool evalAnyError()
     {
-      EvalReturn constexpr error = evalAny<Any...>();
+      constexpr EvalReturn error = evalAny<Any...>();
 
       if constexpr (error.errorType == ErrorType::MISSING_KEY)
       {
@@ -847,10 +739,12 @@ class KeyGenClass
 };
 
 template <class _FunctionPtr, class... _FunctionKeys>
-KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
+KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys) 
+  -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
 
-template <class T*, class _FunctionPtr, class... _FunctionKeys>
-KeyGenClass(T* _classPtr, _FunctionPtr _function, const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
+template <class _FunctionPtr, class... _FunctionKeys>
+KeyGenClass(typename _FunctionPtr::ClassType _classPtr, _FunctionPtr _function, 
+  const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
 
 #define UNPAREN(...) __VA_ARGS__ 
 #define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
