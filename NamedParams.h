@@ -134,7 +134,7 @@ struct IsKey : public std::false_type {};
 template <class T, int N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
-template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool> = true>
+template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool> = true>
 class AssignedKey;
 
 template <class T>
@@ -143,12 +143,12 @@ struct IsAssignedKey : public std::false_type {};
 template <class T>
 struct IsAssignedKey<AssignedKey<T>> : public std::true_type {};
 
-template <class... AssignedKeyPack>
+template <class... TAssignedKeyPack>
 constexpr inline bool areAllAssignedKeys() 
 {
-  const std::array<bool,sizeof...(AssignedKeyPack)> isKey = 
+  const std::array<bool,sizeof...(TAssignedKeyPack)> isKey = 
   {
-    IsAssignedKey<AssignedKeyPack>::value...  
+    IsAssignedKey<TAssignedKeyPack>::value...  
   };
 
   for (auto a : isKey)
@@ -167,12 +167,12 @@ constexpr inline bool areAllAssignedKeys()
  * If the Keytype is a reference, it contains a pointer to the variable 
  * the key was assigned to. If not, it contains a copy of the variable
  */
-template <class KeyType, std::enable_if_t<IsKey<KeyType>::value,bool>>
+template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool>>
 class AssignedKey
 {
   private:
 
-    typedef typename std::remove_reference<typename KeyType::type>::type NoRefType;
+    typedef typename std::remove_reference<typename TKey::type>::type NoRefType;
 
     NoRefType* m_pValue;
     int m_keyID;
@@ -190,13 +190,13 @@ class AssignedKey
     template <class T, std::enable_if_t<std::is_reference<T>::value, int> = 0>
     static AssignedKey build(T _value)
     {
-      return AssignedKey(&_value, KeyType::ID);
+      return AssignedKey(&_value, TKey::ID);
     }
 
     template <class T, std::enable_if_t<!std::is_reference<T>::value, bool> = true>
     static AssignedKey build(T _value)
     {
-      return AssignedKey(new T(_value), KeyType::ID);
+      return AssignedKey(new T(_value), TKey::ID);
     }
 
     AssignedKey(const AssignedKey& _input) = delete;
@@ -220,7 +220,7 @@ class AssignedKey
 
     ~AssignedKey()
     {
-      if (m_pValue && !std::is_reference<typename KeyType::type>::value) 
+      if (m_pValue && !std::is_reference<typename TKey::type>::value) 
       {
         delete m_pValue;
         m_pValue = nullptr;
@@ -238,7 +238,7 @@ class AssignedKey
       return m_keyID;
     }
 
-    typedef KeyType keyType;
+    typedef TKey keyType;
 
 };
 
@@ -317,52 +317,117 @@ struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraitsBase<R(Args...)>
   typedef C ClassType;
 };
 
-/*
-// member function pointer
-template<class C, class R, class... Args>
-struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraits<R(C&,Args...)>
-{};
- 
-// const member function pointer
-template<class C, class R, class... Args>
-struct FunctionTraits<R(C::*)(Args...) const> : public FunctionTraits<R(C&,Args...)>
-{};
- 
-// member object pointer
-template<class C, class R>
-struct FunctionTraits<R(C::*)> : public FunctionTraits<R(C&)>
-{};*/
+template <class TFunctionPtr, class... TFunctionKeys, size_t... Is>
+constexpr inline static int KeyTypesAreValid(std::index_sequence<Is...> const &)
+{
+  constexpr std::array<bool,sizeof...(TFunctionKeys)> keyTypesCompare = {
+    std::is_same<
+      typename std::tuple_element<Is, std::tuple<typename TFunctionKeys::type...>>::type, 
+      typename FunctionTraits<typename std::remove_pointer<TFunctionPtr>::type>::template arg<Is>::type
+    >::value...};
 
-template <class FunctionPtr, class... FunctionKeys> 
-/// CHECK THAT OPTIONAL ARGUMENTS ONLY AFTER REQUIRED?
-/// AND CHECK THAT NUMBER OF KEYS EQUALS NUMBER OF FUNCTION ARGUMENTS
-/// AND CHECK THAT KEYS HAVE CORRECT TYPE, AND CHECK THAT THEY ARE UNIQUE
+  for (int i = 0; i < (int)sizeof...(TFunctionKeys); ++i)
+  {
+    if (!keyTypesCompare[i])
+    {
+      return i;
+    }
+  }
+
+  return -1;
+
+}
+
+template <class... TFunctionKeys>
+constexpr inline static int MultipleIdenticalKeys()
+{
+  std::array<int, sizeof...(TFunctionKeys)> keyIDs = { TFunctionKeys::ID... };
+  _sort(keyIDs.begin(), keyIDs.end());
+  for (int i = 1; i < (int)sizeof...(TFunctionKeys); ++i) 
+  {
+    if (keyIDs[i-1] == keyIDs[i])
+    {
+      return i;
+    }
+  }
+  return -1;
+} 
+
+template <class TFunctionPtr, class... TFunctionKeys>
+constexpr inline static bool KeyGenTemplateIsValid() 
+{
+  // Check if TFunctionPtr is really a (member) function pointer
+  // This is necessary because templates are checked for both constructors
+  // in KeyGenClass, even if only one is enabled. This leads to errors 
+  // in this function. 
+  if constexpr (std::is_function<typename std::remove_pointer<TFunctionPtr>::type>::value
+    || std::is_member_function_pointer<TFunctionPtr>::value)
+  {
+    constexpr int nbFunctionArgs = FunctionTraits< 
+      typename std::remove_pointer<TFunctionPtr>::type>::nbArgs;
+
+    constexpr int nbKeys = sizeof...(TFunctionKeys);
+    if constexpr (nbFunctionArgs != nbKeys)
+    {
+      ConstExprError<nbKeys> TOO_MANY_KEYS_PASSED_TO_KEYGEN;
+      return false;
+    }
+
+    constexpr int invalidKey = KeyTypesAreValid<TFunctionPtr,TFunctionKeys...>(
+      std::make_index_sequence<nbFunctionArgs>());
+    if constexpr (invalidKey >= 0)
+    {
+      ConstExprError<invalidKey> KEY_TYPE_FUNCTION_ARGUMENT_TYPE_MISMATCH;
+      return false;
+    }
+
+    constexpr int duplicateKey = MultipleIdenticalKeys<TFunctionKeys...>();
+    if constexpr (duplicateKey >= 0)
+    {
+      ConstExprError<duplicateKey> MULTIPLE_KEYS_WITH_SAME_KEY_ID;
+    }
+
+    // TODO: ENFORCE OPTIONAL KEYS AFTER NON-OPTIONAL KEYS (?)
+    return true;
+  }
+
+  return false;
+
+}
+
+template <class TFunctionPtr, class... TFunctionKeys>
 class KeyGenClass
 {
   private:
 
-    typedef FunctionTraits<typename std::remove_pointer<FunctionPtr>::type> KeyFunctionTraits;
+    typedef FunctionTraits<typename std::remove_pointer<TFunctionPtr>::type> KeyFunctionTraits;
 
     typename KeyFunctionTraits::ClassType* m_classPtr;
 
-    FunctionPtr m_baseFunction; 
+    TFunctionPtr m_baseFunction; 
 
     std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
 
   public:
 
-    template <class _FunctionPtr, class... _FunctionKeys,
-      std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(_FunctionPtr _function, [[maybe_unused]] const _FunctionKeys&... _keys)
+    template <class DFunctionPtr, class... DFunctionKeys,
+      std::enable_if_t<
+        !std::is_member_function_pointer<DFunctionPtr>::value
+        && KeyGenTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
+      , bool> = true>
+    KeyGenClass(DFunctionPtr _function, [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(nullptr)
       , m_baseFunction(_function)
     {
     }
 
-    template <class _FunctionPtr, class... _FunctionKeys,
-      std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    KeyGenClass(typename KeyFunctionTraits::ClassType* _classPtr, _FunctionPtr _function, 
-      [[maybe_unused]] const _FunctionKeys&... _keys)
+    template <class DFunctionPtr, class... DFunctionKeys, 
+      std::enable_if_t<
+        std::is_member_function_pointer<DFunctionPtr>::value
+        && KeyGenTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
+      , bool> = true>
+    KeyGenClass(typename KeyFunctionTraits::ClassType* _classPtr, DFunctionPtr _function, 
+      [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
     {
@@ -370,7 +435,7 @@ class KeyGenClass
 
     ~KeyGenClass() {}
 
-    std::function<FunctionPtr> getBaseFunction() const
+    std::function<TFunctionPtr> getBaseFunction() const
     {
       return m_baseFunction;
     }
@@ -453,7 +518,7 @@ class KeyGenClass
       constexpr auto group = getNb<Any...>();
       constexpr int nbPositionalArgs = group.first;
       constexpr int nbAssignedKeys = group.second;
-      constexpr int nbFunctionKeys = sizeof...(FunctionKeys);
+      constexpr int nbFunctionKeys = sizeof...(TFunctionKeys);
       constexpr int nbPassedArgs = sizeof...(Any);
 
       // check for too many args
@@ -496,10 +561,10 @@ class KeyGenClass
       std::array<int,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
     
       // get IDs of true function keys
-      std::array<int,nbFunctionKeys> functionKeyIDs = { FunctionKeys::ID... };
+      std::array<int,nbFunctionKeys> functionKeyIDs = { TFunctionKeys::ID... };
 
       std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
-        IsOptional<typename FunctionKeys::type>::value...};
+        IsOptional<typename TFunctionKeys::type>::value...};
 
       int nbRequiredKeys = 0;
       for (auto fOpt : functionKeyIsOptional)
@@ -633,7 +698,7 @@ class KeyGenClass
     template <class... Any, std::enable_if_t<evalAnyError<Any...>(), int> = 0>
     typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
     {
-      return internal2<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(FunctionKeys)>{});
+      return internal2<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(TFunctionKeys)>{});
     }
 
     struct AnyKey 
@@ -711,10 +776,10 @@ class KeyGenClass
         std::cout << s.id << std::endl;
       }
 
-      std::tuple<FunctionKeys...> functionKeyTypes;
+      std::tuple<TFunctionKeys...> functionKeyTypes;
       int offset = 0;
 
-      std::tuple<typename FunctionKeys::type...> paddedParameters = {
+      std::tuple<typename TFunctionKeys::type...> paddedParameters = {
         process(std::get<Is>(functionKeyTypes), Is, nbPositionals, nbPassedArgs, passedKeys, 
         offset)... };
 
@@ -722,29 +787,29 @@ class KeyGenClass
 
     }
 
-    template <typename _FunctionPtr = FunctionPtr, 
-      std::enable_if_t<std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(typename FunctionKeys::type... _args) const
+    template <typename DFunctionPtr = TFunctionPtr, 
+      std::enable_if_t<std::is_member_function_pointer<DFunctionPtr>::value,bool> = true>
+    typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type... _args) const
     {
       return (m_classPtr->*m_baseFunction)(_args...);
     }
 
-    template <typename _FunctionPtr = FunctionPtr, 
-      std::enable_if_t<!std::is_member_function_pointer<_FunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(typename FunctionKeys::type... _args) const
+    template <typename DFunctionPtr = TFunctionPtr, 
+      std::enable_if_t<!std::is_member_function_pointer<DFunctionPtr>::value,bool> = true>
+    typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type... _args) const
     {
       return m_baseFunction(_args...);
     }
 
 };
 
-template <class _FunctionPtr, class... _FunctionKeys>
-KeyGenClass(_FunctionPtr _function, const _FunctionKeys&... _keys) 
-  -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
+template <class DFunctionPtr, class... DFunctionKeys>
+KeyGenClass(DFunctionPtr _function, const DFunctionKeys&... _keys) 
+  -> KeyGenClass<DFunctionPtr,DFunctionKeys...>;
 
-template <class _FunctionPtr, class... _FunctionKeys>
-KeyGenClass(typename _FunctionPtr::ClassType _classPtr, _FunctionPtr _function, 
-  const _FunctionKeys&... _keys) -> KeyGenClass<_FunctionPtr,_FunctionKeys...>;
+template <class DFunctionPtr, class... DFunctionKeys>
+KeyGenClass(typename DFunctionPtr::ClassType _classPtr, DFunctionPtr _function, 
+  const DFunctionKeys&... _keys) -> KeyGenClass<DFunctionPtr,DFunctionKeys...>;
 
 #define UNPAREN(...) __VA_ARGS__ 
 #define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
