@@ -95,6 +95,7 @@ inline constexpr void _sort(Iterator _begin, Iterator _end)
 
 #endif // CXX20
 
+/*
 using id_value = const int *;
 
 template <class T>
@@ -102,7 +103,7 @@ struct unique_id {
   static constexpr int value = 0;
   constexpr unique_id(T const &) {}
   constexpr operator id_value() const { return &value; }
-};
+};*/
 
 /**
     The following is one of the base of this hack!

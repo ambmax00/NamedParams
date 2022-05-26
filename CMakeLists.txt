@@ -16,6 +16,9 @@ add_test(
   NAME TestNamedParams        
   COMMAND ${CMAKE_BINARY_DIR}/TestNamedParamsExe 3)
 
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS NamedParams.h)
+
 try_compile(
   SUCCESS 
   ${CMAKE_BINARY_DIR} 

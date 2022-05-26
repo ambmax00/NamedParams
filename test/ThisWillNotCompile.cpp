@@ -5,6 +5,7 @@ int func_base(int a, float& b, double c, std::optional<int> d, std::optional<std
 	return 0;
 }
 
+
 KEY((int), 0) keyA;
 KEY((float&), 1) keyB;
 KEY((double), 2) keyC;
