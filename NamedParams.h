@@ -95,27 +95,6 @@ inline constexpr void _sort(Iterator _begin, Iterator _end)
 
 #endif // CXX20
 
-/*
-using id_value = const int *;
-
-template <class T>
-struct unique_id {
-  static constexpr int value = 0;
-  constexpr unique_id(T const &) {}
-  constexpr operator id_value() const { return &value; }
-};*/
-
-/**
-    The following is one of the base of this hack!
-    This works because the conversion from unique_id to bool is delayed,
-    therefore the lambda is a new one at each instantiation of a template
-   depending on that non-type template which leads to 'name' to have a different
-   value at each deduction
-*/
-/*
-#define FORCE_UNIQUE(name...) id_value name = unique_id([] {})
-#define UNIQUE *unique_id([]{})*/
-
 /**
   * Define stucts for identifying optional and key
 */
@@ -679,7 +658,7 @@ class KeyGenClass
       }
       else if constexpr (error.errorType == ErrorType::POSITION)
       {
-        ConstExprError<error.id> POSITIONAL_CANNOT_FOLLOW_OPTIONAL_ARGUMENT;
+        ConstExprError<error.id> POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT;
         return false;
       }
       else if constexpr (error.errorType == ErrorType::CONVERSION)
