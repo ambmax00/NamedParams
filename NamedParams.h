@@ -77,6 +77,19 @@ inline constexpr void _sort(Iterator _begin, Iterator _end)
   _sort(_begin, _end, comp);
 }
 
+template <class Iterator, class T>
+inline constexpr Iterator _find(Iterator _begin, Iterator _end, T _value)
+{
+  for (auto iter = _begin; iter < _end; ++iter)
+  {
+    if (*iter == _value)
+    {
+      return iter;
+    }
+  }
+  return _end;
+}
+
 #else // CXX20
 
 /* Use inbuilt sort function */
@@ -105,13 +118,13 @@ struct IsOptional : public std::false_type {};
 template <class T>
 struct IsOptional<std::optional<T>> : public std::true_type {};
 
-template <class T, int N>
+template <class T, int64_t N>
 class Key;
 
 template <class T>
 struct IsKey : public std::false_type {};
 
-template <class T, int N>
+template <class T, int64_t N>
 struct IsKey<Key<T,N>> : public std::true_type {};
 
 template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool> = true>
@@ -155,13 +168,13 @@ class AssignedKey
     typedef typename std::remove_reference<typename TKey::type>::type NoRefType;
 
     NoRefType* m_pValue;
-    int m_keyID;
+    int64_t m_keyID;
 
   public:
 
     AssignedKey() = delete;
 
-    AssignedKey(NoRefType* _pValue, int _keyID)
+    AssignedKey(NoRefType* _pValue, int64_t _keyID)
       : m_pValue(_pValue)
       , m_keyID(_keyID)
     {
@@ -213,7 +226,7 @@ class AssignedKey
       return m_pValue;
     }
 
-    int getKeyID() const
+    int64_t getKeyID() const
     {
       return m_keyID;
     }
@@ -230,7 +243,7 @@ class AssignedKey
  * The Key class does not keep any record of the variable it is assigned to,
  * but delegates the work to AssignedKey.
  */
-template <typename T, int UNIQUE_ID>  // disable negative numbers
+template <typename T, int64_t UNIQUE_ID>  // disable negative numbers
 class Key
 {
   private:
@@ -250,7 +263,7 @@ class Key
 
     typedef T type;
 
-    static const int ID = UNIQUE_ID;
+    static const int64_t ID = UNIQUE_ID;
 
 };
 
@@ -261,7 +274,7 @@ template <int i, typename T = void, typename D = void>
 class ConstExprError;
 
 /**
- * FunctionTraits taken from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
+ * FunctionTraits taken and adapted from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
  * A helper class to get the variable types of a function
  */
 
@@ -321,7 +334,7 @@ constexpr inline static int KeyTypesAreValid(std::index_sequence<Is...> const &)
 template <class... TFunctionKeys>
 constexpr inline static int MultipleIdenticalKeys()
 {
-  std::array<int, sizeof...(TFunctionKeys)> keyIDs = { TFunctionKeys::ID... };
+  std::array<int64_t, sizeof...(TFunctionKeys)> keyIDs = { TFunctionKeys::ID... };
   _sort(keyIDs.begin(), keyIDs.end());
   for (int i = 1; i < (int)sizeof...(TFunctionKeys); ++i) 
   {
@@ -386,7 +399,8 @@ class KeyGenClass
 
     TFunctionPtr m_baseFunction; 
 
-    std::array<int, KeyFunctionTraits::nbArgs> m_keyIDs;
+    const inline static std::array<int64_t, KeyFunctionTraits::nbArgs> m_functionKeyIDs = { 
+      TFunctionKeys::ID... };
 
   public:
 
@@ -465,13 +479,13 @@ class KeyGenClass
     template <class D>
     struct GetArgumentID 
     {
-      const inline static int ID = -1;
+      const inline static int64_t ID = -1;
     };
 
     template <class D>
     struct GetArgumentID<AssignedKey<D>>
     {
-      const inline static int ID = AssignedKey<D>::keyType::ID;
+      const inline static int64_t ID = AssignedKey<D>::keyType::ID;
     };
 
     template <class... Any, size_t... Is>
@@ -538,11 +552,39 @@ class KeyGenClass
       // maybe in the constructor directly, probably better?
 
       // get IDs of assigned keys (-1 for non-keys)
-      std::array<int,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
+      std::array<int64_t,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
     
-      // get IDs of true function keys
-      std::array<int,nbFunctionKeys> functionKeyIDs = { TFunctionKeys::ID... };
+      // get relative/local key IDs
+      std::array<int64_t, nbPassedArgs> passedLocalKeyIDs = {};
+      std::array<int64_t, nbFunctionKeys> functionLocalKeyIDs = {};
+      
+      for (int i = 0; i < nbFunctionKeys; ++i) 
+      {
+        functionLocalKeyIDs[i] = i;
+      }
+      
+      for (int i = 0; i < nbPassedArgs; ++i) 
+      {
+        if (passedKeyIDs[i] < 0)
+        {
+          passedLocalKeyIDs[i] = -1;
+          continue;
+        }
 
+        auto iter = _find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), passedKeyIDs[i]);
+
+        if (iter == m_functionKeyIDs.end())
+        {
+          passedLocalKeyIDs[i] = -2;
+        }
+        else 
+        {
+          int idx = iter - m_functionKeyIDs.begin();
+          passedLocalKeyIDs[i] = functionLocalKeyIDs[idx];
+        }
+
+      }
+      
       std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
         IsOptional<typename TFunctionKeys::type>::value...};
 
@@ -573,34 +615,27 @@ class KeyGenClass
         return EvalReturn{ErrorType::NONE, 0};
       }
 
-      // check for multiple keys of same type
-      for (int i = nbPositionalArgs+1; i < nbPassedArgs; ++i)
-      {
-        if (passedKeyIDs[i-1] == passedKeyIDs[i])
-        {
-          return EvalReturn{ErrorType::MULTIPLE_KEYS, passedKeyIDs[i-1]};
-        }
-      }
-
       // check if unknown key present
       for (int i = nbPositionalArgs; i < nbPassedArgs; ++i)
       {
-        bool found = false;
-        for (int j = 0; j < nbFunctionKeys; ++j)
-        {
-          if (passedKeyIDs[i] == functionKeyIDs[j])
-          {
-            found = true;
-          }
-        }
-        if (!found) 
+        if (passedLocalKeyIDs[i] == -2) 
         {
           return EvalReturn{ErrorType::INVALID_KEY,i};
         }
       }
 
-      // now sort the Key IDs for checking correct keys
-      _sort(passedKeyIDs.begin(), passedKeyIDs.end());
+      // now sort the Key IDs for checking correct keys 
+      _sort(passedLocalKeyIDs.begin(), passedLocalKeyIDs.end());
+
+       // check for multiple keys of same type
+      for (int i = nbPositionalArgs+1; i < nbPassedArgs; ++i)
+      {
+        if (passedLocalKeyIDs[i-1] == passedLocalKeyIDs[i])
+        {
+          return EvalReturn{ErrorType::MULTIPLE_KEYS, i-1};
+        }
+      }
+
       int offset = 0;
       
       for (int iArg = nbPositionalArgs; iArg < nbFunctionKeys; ++iArg)
@@ -608,7 +643,7 @@ class KeyGenClass
         // no more passed keys to parse, and function key is NOT optional
         if (iArg >= nbPassedArgs+offset && !functionKeyIsOptional[iArg])
         {
-          return EvalReturn{ErrorType::MISSING_KEY, functionKeyIDs[iArg]};
+          return EvalReturn{ErrorType::MISSING_KEY, iArg};
         }
         // no more passed keys to parse and function key IS optional 
         else if (iArg >= nbPassedArgs+offset && functionKeyIsOptional[iArg])
@@ -616,17 +651,19 @@ class KeyGenClass
           continue;
         }
         // function key should never be larger than the pass key
-        else if (functionKeyIDs[iArg] > passedKeyIDs[iArg-offset])
+        else if (functionLocalKeyIDs[iArg] > passedLocalKeyIDs[iArg-offset])
         {
-          return EvalReturn{ErrorType::INVALID_KEY, passedKeyIDs[iArg-offset]};
+          return EvalReturn{ErrorType::INVALID_KEY, iArg-offset};
         }
         // if the function key is smaller, some key might be missing - check if optional
-        else if (functionKeyIDs[iArg] < passedKeyIDs[iArg-offset] && !functionKeyIsOptional[iArg])
+        else if (functionLocalKeyIDs[iArg] < passedLocalKeyIDs[iArg-offset] 
+                 && !functionKeyIsOptional[iArg])
         {
-          return EvalReturn{ErrorType::MISSING_KEY, functionKeyIDs[iArg]};
+          return EvalReturn{ErrorType::MISSING_KEY, iArg};
         }
         // same as above. but incrementing offset
-        else if (functionKeyIDs[iArg] < passedKeyIDs[iArg-offset] && functionKeyIsOptional[iArg])
+        else if (functionLocalKeyIDs[iArg] < passedLocalKeyIDs[iArg-offset] 
+        && functionKeyIsOptional[iArg])
         {
           offset++;
         }
@@ -683,16 +720,16 @@ class KeyGenClass
 
     struct AnyKey 
     {
-      int id;
+      int64_t id;
       void* ptr;
     };
 
     template <class TKey, class TArray>
-    typename TKey::type process(TKey& _key, 
+    typename TKey::type process([[maybe_unused]] TKey& _key, 
                                 int _idx, 
                                 int _nbPositionals, 
                                 int _nbArguments,
-                                TArray& _passedKeys,
+                                TArray& _passedLocalKeys,
                                 int& _offset) const
     { 
       if (_idx >= _nbPositionals) 
@@ -706,7 +743,7 @@ class KeyGenClass
             return out;
           }
           // function paramter nr. _idx not present, fill with nullopt
-          if (_passedKeys[_idx - _offset].id > _key.ID) 
+          if (_passedLocalKeys[_idx - _offset].id > _idx) 
           {
             ++_offset;
             typename TKey::type out = std::nullopt;
@@ -714,9 +751,9 @@ class KeyGenClass
           } 
         }
         // same key, transfer ownership
-        if (_passedKeys[_idx - _offset].id == _key.ID)
+        if (_passedLocalKeys[_idx - _offset].id == _idx)
         {
-          auto pAssignedKey = (AssignedKey<TKey>*)_passedKeys[_idx-_offset].ptr;
+          auto pAssignedKey = (AssignedKey<TKey>*)_passedLocalKeys[_idx-_offset].ptr;
           return *pAssignedKey->getValue();
         }
       }
@@ -725,7 +762,7 @@ class KeyGenClass
         // positionals are guaranteed to be in order and not skip any arguments
         // remove reference to avoid pointer to reference
         return *((typename std::remove_reference<typename TKey::type>::type*)
-          _passedKeys[_idx-_offset].ptr);
+          _passedLocalKeys[_idx-_offset].ptr);
       }
 
       // SHOULD NOT HAPPEN
@@ -739,10 +776,14 @@ class KeyGenClass
       constexpr int nbPositionals = group.first;
       constexpr int nbPassedArgs = sizeof...(Any);
 
-      std::array<AnyKey,nbPassedArgs> passedKeys = 
-      {
-        AnyKey{GetArgumentID<Any>::ID, (void*)&_args}...
-      };
+      // fill an array with objects of type "AnyKey" which contains (1) the address of the variable
+      // and (2) the local Key ID 
+      std::array<AnyKey,nbPassedArgs> passedKeys = { 
+        AnyKey{ 
+          (int64_t)(_find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), GetArgumentID<Any>::ID) 
+          - m_functionKeyIDs.begin()), // (1) guaranteed to be not end() 
+          (void*)&_args // (2)
+        }...};
 
       _sort(passedKeys.begin() + nbPositionals, passedKeys.end(), 
         [](const auto& _p0, const auto& _p1)
@@ -750,11 +791,6 @@ class KeyGenClass
           return _p0.id < _p1.id;
         }
       );
-
-      for (auto s : passedKeys) 
-      {
-        std::cout << s.id << std::endl;
-      }
 
       std::tuple<TFunctionKeys...> functionKeyTypes;
       int offset = 0;
@@ -791,9 +827,43 @@ template <class DFunctionPtr, class... DFunctionKeys>
 KeyGenClass(typename DFunctionPtr::ClassType _classPtr, DFunctionPtr _function, 
   const DFunctionKeys&... _keys) -> KeyGenClass<DFunctionPtr,DFunctionKeys...>;
 
+#define INT64_T_MAX 9223372036854775807UL
+#define UINT64_T_MAX 18446744073709551615UL
+
+constexpr int64_t uniqueID(const char* seed)
+{
+  uint64_t num = 0;
+
+  const uint64_t nbDigits = 20;
+  const uint64_t nbFields = 10;
+
+  uint64_t i = 0;
+  while (true) {
+    if (seed[i] == '\0')
+    {
+      break;
+    }
+    uint64_t idx = i % nbDigits;
+    num += (uint64_t)seed[i] * (idx*nbFields) % INT64_MAX;
+    ++i;
+  }
+
+  int64_t out = static_cast<int64_t>(num);
+  return (out < 0) ? out + INT64_T_MAX : out;
+
+}
+
 #define UNPAREN(...) __VA_ARGS__ 
 #define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
 #define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
 #define KEYGEN inline static const KeyGenClass
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define UNIQUE(name) uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
+
+#define PARAM(name, ...) const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
+#define OPTPARAM(name, ...) const inline static Key<std::optional< __VA_ARGS__ >, UNIQUE(name)> name;
+#define PARAMETRIZE(function, ...) const inline KeyGenClass np##_##function(&function, __VA_ARGS__);
 
 #endif // NAMED_PARAMS_H

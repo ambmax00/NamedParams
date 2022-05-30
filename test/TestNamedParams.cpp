@@ -18,15 +18,62 @@
 
 #define _MEMKEYGEN() 
 #define MEMKEYGEN()
- 
+
+// function for testing correct order
+std::string word(char _a, char _b, char _c, char _d)
+{ 
+  std::string out = {_a, _b, _c, _d};
+  return out;
+}
+
+PARAM(char0, char)
+PARAM(char1, char)
+PARAM(char2, char)
+PARAM(char3, char)
+
+PARAMETRIZE(word, char0, char1, char2, char3)
+
+// function for testing reference passing
+void concat(std::string& _str0, std::string& _str1)
+{
+  _str0 += _str1;
+}
+
+PARAM(str0, std::string&)
+PARAM(str1, std::string&)
+PARAMETRIZE(concat, str0, str1)
+
+// function for testing optional params
+int sum(int _a, int _b, std::optional<int> _c, std::optional<int> _d, std::optional<int> _e) 
+{
+  return _a + _b + (_c ? *_c : 0) + (_d ? *_d : 1) + (_e ? *_e : 2);
+}
+
+PARAM(keyA, int)
+PARAM(keyB, int)
+OPTPARAM(keyC, int)
+OPTPARAM(keyD, int)
+OPTPARAM(keyE, int)
+
+PARAMETRIZE(sum, keyA, keyB, keyC, keyD, keyE)
+
+int singleArgument(std::optional<int> _i)
+{
+  return _i ? *_i : 0;
+}
+
+OPTPARAM(single, int)
+PARAMETRIZE(singleArgument, single)
+
 int foo(float a, int& b)
 {
   b = 5;
   return a + b;
 }
 
-KEY((float),0) pa;
-KEY((int&),1) pb;
+PARAM(pa, float)
+PARAM(pb, int&)
+
 //KEYGEN 
 inline static const KeyGenClass fooWrapper(&foo,pa,pb);
 
@@ -112,13 +159,13 @@ class Test
     {
       if (_d)
       {
-        _c = 6.0;
-        return m_int + _a + _b + _c + *_d;
+        _c = m_int + _a + _b + _c + *_d;
+        return 0;
       }
       else 
       {
-        _c = 6.0;
-        return m_int + _a + _b + _c;
+        _c = m_int + _a + _b + _c;
+        return 1;
       }
     }
 
@@ -135,6 +182,20 @@ class Test
 int main()
 {
   int result = 0;
+
+  std::string str = np_word(char2 = 'r', char1 = 'o', char3 = 'd', char0 = 'w');
+  CHECK_EQUAL(str, "word", result);
+
+  std::string a = "a";
+  std::string b = "b";
+
+  np_concat(str0 = a, str1 = b);
+
+  CHECK_EQUAL(a, "ab", result);
+
+  int sum = np_sum(keyA = 1, keyB = 2, keyD = 4);
+
+  CHECK_EQUAL(sum, 9, result);
 
   int c = 3;
 
@@ -169,8 +230,8 @@ int main()
   float val = 3.0;
   int ret6 = t0.computeW(1, 2, Test::paramC = val, Test::paramD = 4);
 
-  CHECK_EQUAL(ret6, t0.m_int + 13, result);
-  CHECK_ALMOST_EQUAL(val, 6.0, result);
+  CHECK_EQUAL(ret6, 0, result);
+  CHECK_ALMOST_EQUAL(val, 11.0, result);
 
   return result;
 
