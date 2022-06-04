@@ -236,6 +236,12 @@ class AssignedKey
 };
 
 /**
+ * Helper class to force a compile error
+ */
+template <int i>
+class ConstExprError;
+
+/**
  * The Key class allows to define named parameters that are passed to the KeyGenClass object.
  * Keys can be reused from one function to another.
  * Keys in the same function should not have the same UNIQUE_ID, or everything
@@ -263,15 +269,9 @@ class Key
 
     typedef T type;
 
-    static const int64_t ID = UNIQUE_ID;
+    static inline const int64_t ID = UNIQUE_ID;
 
 };
-
-/**
- * Helper class to force a compile error
- */
-template <int i, typename T = void, typename D = void>
-class ConstExprError;
 
 /**
  * FunctionTraits taken and adapted from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
@@ -598,7 +598,7 @@ class KeyGenClass
       // (e.g. funcWrapper() -> func(int))
       if (nbRequiredKeys != 0 && nbPassedArgs == 0)
       {
-        return EvalReturn{ErrorType::MISSING_KEY, 0}; //<--- fix number
+        return EvalReturn{ErrorType::MISSING_KEY, 0, }; //<--- fix number
       }
 
       // if func only has optional arguments, and no args were passed we can return immediately
@@ -776,8 +776,8 @@ class KeyGenClass
       constexpr int nbPositionals = group.first;
       constexpr int nbPassedArgs = sizeof...(Any);
 
-      // fill an array with objects of type "AnyKey" which contains (1) the address of the variable
-      // and (2) the local Key ID 
+      // fill an array with objects of type "AnyKey" which contains (1) the local key ID
+      // and (2) the address of the variable
       std::array<AnyKey,nbPassedArgs> passedKeys = { 
         AnyKey{ 
           (int64_t)(_find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), GetArgumentID<Any>::ID) 
@@ -862,7 +862,10 @@ constexpr int64_t uniqueID(const char* seed)
 #define TOSTRING(x) STRINGIFY(x)
 #define UNIQUE(name) uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
 
-#define PARAM(name, ...) const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
+#define PARAM(name, ...) \
+  const inline static char function_key_##name[] = ""; \
+  const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
+
 #define OPTPARAM(name, ...) const inline static Key<std::optional< __VA_ARGS__ >, UNIQUE(name)> name;
 #define PARAMETRIZE(function, ...) const inline KeyGenClass np##_##function(&function, __VA_ARGS__);
 
