@@ -399,7 +399,7 @@ class KeyGenClass
 
     TFunctionPtr m_baseFunction; 
 
-    const inline static std::array<int64_t, KeyFunctionTraits::nbArgs> m_functionKeyIDs = { 
+    constexpr inline static std::array<int64_t, KeyFunctionTraits::nbArgs> m_functionKeyIDs = { 
       TFunctionKeys::ID... };
 
   public:
@@ -863,7 +863,6 @@ constexpr int64_t uniqueID(const char* seed)
 #define UNIQUE(name) uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
 
 #define PARAM(name, ...) \
-  const inline static char function_key_##name[] = ""; \
   const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
 
 #define OPTPARAM(name, ...) const inline static Key<std::optional< __VA_ARGS__ >, UNIQUE(name)> name;
