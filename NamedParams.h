@@ -118,14 +118,19 @@ struct IsOptional : public std::false_type {};
 template <class T>
 struct IsOptional<std::optional<T>> : public std::true_type {};
 
-template <class T, int64_t N>
+enum KEYTYPE 
+{
+  THIS
+};
+
+template <class T, int64_t N, class E = KEYTYPE>
 class Key;
 
 template <class T>
 struct IsKey : public std::false_type {};
 
-template <class T, int64_t N>
-struct IsKey<Key<T,N>> : public std::true_type {};
+template <class T, int64_t N, class E>
+struct IsKey<Key<T,N,E>> : public std::true_type {};
 
 template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool> = true>
 class AssignedKey;
@@ -238,8 +243,32 @@ class AssignedKey
 /**
  * Helper class to force a compile error
  */
-template <int i>
+template <int i, typename T = KEYTYPE>
 class ConstExprError;
+
+enum class ErrorType
+{
+  NONE = 0,
+  MISSING_KEY = 1,
+  INVALID_KEY = 2,
+  MULTIPLE_KEYS_OF_SAME_TYPE = 3,
+  POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT = 4,
+  TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION = 5,
+  COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE = 6,
+  TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN = 7
+};
+
+template <ErrorType error, auto... Var>
+constexpr void failWithMessage()
+{
+  static_assert((error != ErrorType::MISSING_KEY));
+  static_assert((error != ErrorType::INVALID_KEY));
+  static_assert((error != ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE));
+  static_assert((error != ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT));
+  static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION));
+  static_assert((error != ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE));
+  static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN));
+}
 
 /**
  * The Key class allows to define named parameters that are passed to the KeyGenClass object.
@@ -249,7 +278,7 @@ class ConstExprError;
  * The Key class does not keep any record of the variable it is assigned to,
  * but delegates the work to AssignedKey.
  */
-template <typename T, int64_t UNIQUE_ID>  // disable negative numbers
+template <typename T, int64_t UNIQUE_ID, class E>  // disable negative numbers
 class Key
 {
   private:
@@ -270,6 +299,8 @@ class Key
     typedef T type;
 
     static inline const int64_t ID = UNIQUE_ID;
+
+    typedef E name;
 
 };
 
@@ -359,10 +390,14 @@ constexpr inline static bool KeyGenTemplateIsValid()
     constexpr int nbFunctionArgs = FunctionTraits< 
       typename std::remove_pointer<TFunctionPtr>::type>::nbArgs;
 
+    std::tuple<typename TFunctionKeys::name...> keyNames;
+
     constexpr int nbKeys = sizeof...(TFunctionKeys);
     if constexpr (nbFunctionArgs != nbKeys)
     {
-      ConstExprError<nbKeys> TOO_MANY_KEYS_PASSED_TO_KEYGEN;
+      failWithMessage<
+        ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN,
+        nbFunctionArgs,nbKeys>();
       return false;
     }
 
@@ -370,14 +405,17 @@ constexpr inline static bool KeyGenTemplateIsValid()
       std::make_index_sequence<nbFunctionArgs>());
     if constexpr (invalidKey >= 0)
     {
-      ConstExprError<invalidKey> KEY_TYPE_FUNCTION_ARGUMENT_TYPE_MISMATCH;
+      failWithMessage<
+        ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE,
+        typename std::tuple_element<invalidKey, decltype(keyNames)>::type>();
       return false;
     }
 
     constexpr int duplicateKey = MultipleIdenticalKeys<TFunctionKeys...>();
     if constexpr (duplicateKey >= 0)
     {
-      ConstExprError<duplicateKey> MULTIPLE_KEYS_WITH_SAME_KEY_ID;
+      failWithMessage<ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE>();
+      return false;
     }
 
     // TODO: ENFORCE OPTIONAL KEYS AFTER NON-OPTIONAL KEYS (?)
@@ -434,22 +472,72 @@ class KeyGenClass
       return m_baseFunction;
     }
 
-    enum class ErrorType
-    {
-      NONE = 0,
-      MISSING_KEY = 1,
-      INVALID_KEY = 2,
-      MULTIPLE_KEYS = 3,
-      POSITION = 4,
-      TOO_MANY_ARGS = 5,
-      CONVERSION = 6
-    };
-
     struct EvalReturn
     {
       ErrorType errorType;
       int id;
     };
+
+    // get local key IDs for passed arguments
+    // unknown arguments are given ID = -2
+    // positional arguments are given ID = -1
+    // named arguments are assigned its key ID
+    template <class... Any>
+    constexpr inline static std::array<int64_t,sizeof...(Any)> getLocalKeyIDs()
+    {
+      constexpr int nbPassedArgs = sizeof...(Any);
+      std::array<int64_t, nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
+      std::array<int64_t, nbPassedArgs> passedLocalKeyIDs = {};
+      
+      for (int i = 0; i < nbPassedArgs; ++i) 
+      {
+        if (passedKeyIDs[i] < 0)
+        {
+          passedLocalKeyIDs[i] = -1;
+          continue;
+        }
+
+        auto iter = _find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), passedKeyIDs[i]);
+
+        if (iter == m_functionKeyIDs.end())
+        {
+          passedLocalKeyIDs[i] = -2;
+        }
+        else 
+        {
+          int64_t idx = iter - m_functionKeyIDs.begin();
+          passedLocalKeyIDs[i] = idx;
+        }
+
+      }
+
+      return passedLocalKeyIDs;
+    }
+
+    // sort the passed arguments according to order of functionKeys
+    // do it here in this function, so we do not need to do it at runtime
+    // returns a sorted array where array[idx] gives the original position of 
+    // the passed argument
+    template <class... Any>
+    constexpr inline static std::array<int64_t,sizeof...(Any)> getSortedIndices(
+      const std::array<int64_t,sizeof...(Any)>& localKeyIDs)
+    {
+      constexpr int nbPassedKeys = sizeof...(Any);
+      std::array<int64_t, nbPassedKeys> indices = {};
+      for (int i = 0; i < nbPassedKeys; ++i)
+      {
+        indices[i] = i;
+      }
+
+      _sort(indices.begin(), indices.end(), 
+        [&](const int64_t a, const int64_t b)
+        {
+          return localKeyIDs[a] < localKeyIDs[b];
+        });
+
+      return indices;
+
+    }
 
     template <class... Any>
     constexpr inline static std::pair<int,int> getNb() 
@@ -518,7 +606,7 @@ class KeyGenClass
       // check for too many args
       if (nbPassedArgs > nbFunctionKeys)
       {
-        return EvalReturn{ErrorType::TOO_MANY_ARGS, 0};
+        return EvalReturn{ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION, 0};
       }
 
       // check if positional arguments are grouped together
@@ -532,7 +620,7 @@ class KeyGenClass
         // key should not follow positional argument
         if (isKey[i-1] && !isKey[i])
         {
-          return EvalReturn{ErrorType::POSITION, i};
+          return EvalReturn{ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT, i};
         }
       }
       
@@ -544,18 +632,14 @@ class KeyGenClass
       {
         if (!positionalIsConvertible[i])
         {
-          return EvalReturn{ErrorType::CONVERSION, i};
+          return EvalReturn{ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE, i};
         }
       }
       
       // check if keys are all correct types <----
       // maybe in the constructor directly, probably better?
-
-      // get IDs of assigned keys (-1 for non-keys)
-      std::array<int64_t,nbPassedArgs> passedKeyIDs = { GetArgumentID<Any>::ID... };
     
       // get relative/local key IDs
-      std::array<int64_t, nbPassedArgs> passedLocalKeyIDs = {};
       std::array<int64_t, nbFunctionKeys> functionLocalKeyIDs = {};
       
       for (int i = 0; i < nbFunctionKeys; ++i) 
@@ -563,27 +647,7 @@ class KeyGenClass
         functionLocalKeyIDs[i] = i;
       }
       
-      for (int i = 0; i < nbPassedArgs; ++i) 
-      {
-        if (passedKeyIDs[i] < 0)
-        {
-          passedLocalKeyIDs[i] = -1;
-          continue;
-        }
-
-        auto iter = _find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), passedKeyIDs[i]);
-
-        if (iter == m_functionKeyIDs.end())
-        {
-          passedLocalKeyIDs[i] = -2;
-        }
-        else 
-        {
-          int idx = iter - m_functionKeyIDs.begin();
-          passedLocalKeyIDs[i] = functionLocalKeyIDs[idx];
-        }
-
-      }
+      constexpr std::array<int64_t, nbPassedArgs> passedLocalKeyIDs = getLocalKeyIDs<Any...>();
       
       std::array<bool,nbFunctionKeys> functionKeyIsOptional = {
         IsOptional<typename TFunctionKeys::type>::value...};
@@ -625,14 +689,22 @@ class KeyGenClass
       }
 
       // now sort the Key IDs for checking correct keys 
-      _sort(passedLocalKeyIDs.begin(), passedLocalKeyIDs.end());
+
+      constexpr auto sortIndex = getSortedIndices<Any...>(passedLocalKeyIDs);
+      std::array<int64_t,nbPassedArgs> passedSortedKeyIDs = {};
+      for (int i = 0; i < nbPassedArgs; ++i)
+      {
+        passedSortedKeyIDs[i] = passedLocalKeyIDs[sortIndex[i]];
+      }
+
+      //_sort(passedLocalKeyIDs.begin(), passedLocalKeyIDs.end());
 
        // check for multiple keys of same type
       for (int i = nbPositionalArgs+1; i < nbPassedArgs; ++i)
       {
-        if (passedLocalKeyIDs[i-1] == passedLocalKeyIDs[i])
+        if (passedSortedKeyIDs[i-1] == passedSortedKeyIDs[i])
         {
-          return EvalReturn{ErrorType::MULTIPLE_KEYS, i-1};
+          return EvalReturn{ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE, i-1};
         }
       }
 
@@ -651,18 +723,18 @@ class KeyGenClass
           continue;
         }
         // function key should never be larger than the pass key
-        else if (functionLocalKeyIDs[iArg] > passedLocalKeyIDs[iArg-offset])
+        else if (functionLocalKeyIDs[iArg] > passedSortedKeyIDs[iArg-offset])
         {
           return EvalReturn{ErrorType::INVALID_KEY, iArg-offset};
         }
         // if the function key is smaller, some key might be missing - check if optional
-        else if (functionLocalKeyIDs[iArg] < passedLocalKeyIDs[iArg-offset] 
+        else if (functionLocalKeyIDs[iArg] < passedSortedKeyIDs[iArg-offset] 
                  && !functionKeyIsOptional[iArg])
         {
           return EvalReturn{ErrorType::MISSING_KEY, iArg};
         }
         // same as above. but incrementing offset
-        else if (functionLocalKeyIDs[iArg] < passedLocalKeyIDs[iArg-offset] 
+        else if (functionLocalKeyIDs[iArg] < passedSortedKeyIDs[iArg-offset] 
         && functionKeyIsOptional[iArg])
         {
           offset++;
@@ -678,36 +750,7 @@ class KeyGenClass
     {
       constexpr EvalReturn error = evalAny<Any...>();
 
-      if constexpr (error.errorType == ErrorType::MISSING_KEY)
-      {
-        ConstExprError<error.id> MISSING_KEY;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::INVALID_KEY)
-      {
-        ConstExprError<error.id> INVALID_KEY;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::MULTIPLE_KEYS)
-      {
-        ConstExprError<error.id> MULTIPLE_KEYS_OF_SAME_TYPE;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::POSITION)
-      {
-        ConstExprError<error.id> POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT;
-        return false;
-      }
-      else if constexpr (error.errorType == ErrorType::CONVERSION)
-      {
-        ConstExprError<error.id> ARGUMENT_CANNOT_BE_CONVERTED;
-        return true;
-      }
-      else if constexpr (error.errorType == ErrorType::TOO_MANY_ARGS)
-      {
-        ConstExprError<error.id> TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION;
-        return true;
-      }
+      failWithMessage<error.errorType>();
 
       return true;
     }
@@ -718,32 +761,23 @@ class KeyGenClass
       return internal2<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(TFunctionKeys)>{});
     }
 
-    struct AnyKey 
-    {
-      int64_t id;
-      void* ptr;
-    };
-
-    template <class TKey, class TArray>
-    typename TKey::type process([[maybe_unused]] TKey& _key, 
-                                int _idx, 
-                                int _nbPositionals, 
-                                int _nbArguments,
-                                TArray& _passedLocalKeys,
+    template <class TKey, int Idx, int NbPositionals, int NbArgs>
+    typename TKey::type process(std::array<void*,NbArgs>& _addresses,
+                                std::array<int64_t,NbArgs>& _keyIDs,
                                 int& _offset) const
     { 
-      if (_idx >= _nbPositionals) 
+      if constexpr (Idx >= NbPositionals) 
       {
         if constexpr (IsOptional<typename TKey::type>::value)
         {
           // no more passed keys left, return empty optional
-          if (_idx >= _nbArguments + _offset)
+          if (Idx >= NbArgs + _offset)
           {
             typename TKey::type out = std::nullopt;
             return out;
           }
           // function paramter nr. _idx not present, fill with nullopt
-          if (_passedLocalKeys[_idx - _offset].id > _idx) 
+          if (_keyIDs[Idx - _offset] > Idx) 
           {
             ++_offset;
             typename TKey::type out = std::nullopt;
@@ -751,9 +785,9 @@ class KeyGenClass
           } 
         }
         // same key, transfer ownership
-        if (_passedLocalKeys[_idx - _offset].id == _idx)
+        if (_keyIDs[Idx - _offset] == Idx)
         {
-          auto pAssignedKey = (AssignedKey<TKey>*)_passedLocalKeys[_idx-_offset].ptr;
+          auto pAssignedKey = (AssignedKey<TKey>*)_addresses[Idx -_offset];
           return *pAssignedKey->getValue();
         }
       }
@@ -762,7 +796,7 @@ class KeyGenClass
         // positionals are guaranteed to be in order and not skip any arguments
         // remove reference to avoid pointer to reference
         return *((typename std::remove_reference<typename TKey::type>::type*)
-          _passedLocalKeys[_idx-_offset].ptr);
+          _addresses[Idx -_offset]);
       }
 
       // SHOULD NOT HAPPEN
@@ -776,31 +810,32 @@ class KeyGenClass
       constexpr int nbPositionals = group.first;
       constexpr int nbPassedArgs = sizeof...(Any);
 
-      // fill an array with objects of type "AnyKey" which contains (1) the local key ID
-      // and (2) the address of the variable
-      std::array<AnyKey,nbPassedArgs> passedKeys = { 
-        AnyKey{ 
-          (int64_t)(_find(m_functionKeyIDs.begin(), m_functionKeyIDs.end(), GetArgumentID<Any>::ID) 
-          - m_functionKeyIDs.begin()), // (1) guaranteed to be not end() 
-          (void*)&_args // (2)
-        }...};
+      constexpr std::array<int64_t,nbPassedArgs> passedLocalKeys = getLocalKeyIDs<Any...>();
+      constexpr std::array<int64_t,nbPassedArgs> sortedIndices = getSortedIndices<Any...>(passedLocalKeys);
+      
+      std::array<void*,nbPassedArgs> passedKeyAddresses = { (void*)&_args... };
+      std::array<void*,nbPassedArgs> sortedPassedKeyAddresses = {};
+      std::array<int64_t,nbPassedArgs> sortedPassedLocalKeys = {};
 
-      _sort(passedKeys.begin() + nbPositionals, passedKeys.end(), 
-        [](const auto& _p0, const auto& _p1)
-        {
-          return _p0.id < _p1.id;
-        }
-      );
+      for (int i = 0; i < nbPassedArgs; ++i)
+      {
+        int64_t idx = sortedIndices[i];
+        sortedPassedKeyAddresses[i] = passedKeyAddresses[idx];
+        sortedPassedLocalKeys[i] = passedLocalKeys[idx];
+      }
 
       std::tuple<TFunctionKeys...> functionKeyTypes;
       int offset = 0;
 
       std::tuple<typename TFunctionKeys::type...> paddedParameters = {
-        process(std::get<Is>(functionKeyTypes), Is, nbPositionals, nbPassedArgs, passedKeys, 
-        offset)... };
+        process<
+          typename std::tuple_element<Is, std::tuple<TFunctionKeys...>>::type,
+          Is, nbPositionals, nbPassedArgs
+        >
+        ( sortedPassedKeyAddresses, sortedPassedLocalKeys, offset )... };
 
       return call(std::get<Is>(paddedParameters)...);
-
+      //CONST ???? COMMIT
     }
 
     template <typename DFunctionPtr = TFunctionPtr, 

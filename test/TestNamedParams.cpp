@@ -152,6 +152,7 @@ class Test
 
 int main()
 {
+
   int result = 0;
 
   std::string str = np_word(char2 = 'r', char1 = 'o', char3 = 'd', char0 = 'w');
