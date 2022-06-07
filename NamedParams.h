@@ -118,18 +118,18 @@ struct IsOptional : public std::false_type {};
 template <class T>
 struct IsOptional<std::optional<T>> : public std::true_type {};
 
-enum KEYTYPE 
+enum DefaultKeyName 
 {
-  THIS
+  UNNAMED_KEY
 };
 
-template <class T, int64_t N, class E = KEYTYPE>
+template <class T, int64_t N, auto E = DefaultKeyName::UNNAMED_KEY>
 class Key;
 
 template <class T>
 struct IsKey : public std::false_type {};
 
-template <class T, int64_t N, class E>
+template <class T, int64_t N, auto E>
 struct IsKey<Key<T,N,E>> : public std::true_type {};
 
 template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool> = true>
@@ -240,22 +240,18 @@ class AssignedKey
 
 };
 
-/**
- * Helper class to force a compile error
- */
-template <int i, typename T = KEYTYPE>
-class ConstExprError;
-
 enum class ErrorType
 {
   NONE = 0,
   MISSING_KEY = 1,
   INVALID_KEY = 2,
-  MULTIPLE_KEYS_OF_SAME_TYPE = 3,
+  SAME_KEY_PASSED_MORE_THAN_ONCE = 3,
   POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT = 4,
   TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION = 5,
-  COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE = 6,
-  TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN = 7
+  KEY_HAS_WRONG_TYPE = 6,
+  COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE = 7,
+  TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN = 8,
+  SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN = 9
 };
 
 template <ErrorType error, auto... Var>
@@ -263,9 +259,11 @@ constexpr void failWithMessage()
 {
   static_assert((error != ErrorType::MISSING_KEY));
   static_assert((error != ErrorType::INVALID_KEY));
-  static_assert((error != ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE));
+  static_assert((error != ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE));
+  static_assert((error != ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN));
   static_assert((error != ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT));
   static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION));
+  static_assert((error != ErrorType::KEY_HAS_WRONG_TYPE));
   static_assert((error != ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE));
   static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN));
 }
@@ -278,7 +276,7 @@ constexpr void failWithMessage()
  * The Key class does not keep any record of the variable it is assigned to,
  * but delegates the work to AssignedKey.
  */
-template <typename T, int64_t UNIQUE_ID, class E>  // disable negative numbers
+template <typename T, int64_t UNIQUE_ID, auto E>  // disable negative numbers
 class Key
 {
   private:
@@ -300,7 +298,7 @@ class Key
 
     static inline const int64_t ID = UNIQUE_ID;
 
-    typedef E name;
+    static auto const name = E;
 
 };
 
@@ -390,8 +388,6 @@ constexpr inline static bool KeyGenTemplateIsValid()
     constexpr int nbFunctionArgs = FunctionTraits< 
       typename std::remove_pointer<TFunctionPtr>::type>::nbArgs;
 
-    std::tuple<typename TFunctionKeys::name...> keyNames;
-
     constexpr int nbKeys = sizeof...(TFunctionKeys);
     if constexpr (nbFunctionArgs != nbKeys)
     {
@@ -406,15 +402,15 @@ constexpr inline static bool KeyGenTemplateIsValid()
     if constexpr (invalidKey >= 0)
     {
       failWithMessage<
-        ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE,
-        typename std::tuple_element<invalidKey, decltype(keyNames)>::type>();
+        ErrorType::KEY_HAS_WRONG_TYPE,
+        std::tuple_element<invalidKey, std::tuple<TFunctionKeys...>>::type::name>();
       return false;
     }
 
     constexpr int duplicateKey = MultipleIdenticalKeys<TFunctionKeys...>();
     if constexpr (duplicateKey >= 0)
     {
-      failWithMessage<ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE>();
+      failWithMessage<ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN>();
       return false;
     }
 
@@ -476,6 +472,7 @@ class KeyGenClass
     {
       ErrorType errorType;
       int id;
+      int isFuncID; // wether id refers to TFunctionKeys (0), Any (pos) or None (neg)
     };
 
     // get local key IDs for passed arguments
@@ -603,12 +600,6 @@ class KeyGenClass
       constexpr int nbFunctionKeys = sizeof...(TFunctionKeys);
       constexpr int nbPassedArgs = sizeof...(Any);
 
-      // check for too many args
-      if (nbPassedArgs > nbFunctionKeys)
-      {
-        return EvalReturn{ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION, 0};
-      }
-
       // check if positional arguments are grouped together
       constexpr std::array<bool,sizeof...(Any)> isKey = 
       {
@@ -620,7 +611,7 @@ class KeyGenClass
         // key should not follow positional argument
         if (isKey[i-1] && !isKey[i])
         {
-          return EvalReturn{ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT, i};
+          return EvalReturn{ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT, i, 0};
         }
       }
       
@@ -632,7 +623,7 @@ class KeyGenClass
       {
         if (!positionalIsConvertible[i])
         {
-          return EvalReturn{ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE, i};
+          return EvalReturn{ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE, i, 0};
         }
       }
       
@@ -662,21 +653,21 @@ class KeyGenClass
       // (e.g. funcWrapper() -> func(int))
       if (nbRequiredKeys != 0 && nbPassedArgs == 0)
       {
-        return EvalReturn{ErrorType::MISSING_KEY, 0, }; //<--- fix number
+        return EvalReturn{ErrorType::MISSING_KEY, 0, 0};
       }
 
       // if func only has optional arguments, and no args were passed we can return immediately
       // e.g. funcWrapper() -> func(std::optional<int>)
       if (nbRequiredKeys == 0 && nbPassedArgs == 0)
       {
-        return EvalReturn{ErrorType::NONE, 0};
+        return EvalReturn{ErrorType::NONE, 0, 0};
       }
 
       // if all required keys in positional arguments, and no keys -> return
       // e.g. funcWrapper(1,2,3) -> func(int, int, std::optional)
       if (nbRequiredKeys <= nbPositionalArgs && nbAssignedKeys == 0)
       {
-        return EvalReturn{ErrorType::NONE, 0};
+        return EvalReturn{ErrorType::NONE, 0, 0};
       }
 
       // check if unknown key present
@@ -684,14 +675,16 @@ class KeyGenClass
       {
         if (passedLocalKeyIDs[i] == -2) 
         {
-          return EvalReturn{ErrorType::INVALID_KEY,i};
+          return EvalReturn{ErrorType::INVALID_KEY,i,1};
         }
       }
 
       // now sort the Key IDs for checking correct keys 
 
       constexpr auto sortIndex = getSortedIndices<Any...>(passedLocalKeyIDs);
+
       std::array<int64_t,nbPassedArgs> passedSortedKeyIDs = {};
+
       for (int i = 0; i < nbPassedArgs; ++i)
       {
         passedSortedKeyIDs[i] = passedLocalKeyIDs[sortIndex[i]];
@@ -704,7 +697,7 @@ class KeyGenClass
       {
         if (passedSortedKeyIDs[i-1] == passedSortedKeyIDs[i])
         {
-          return EvalReturn{ErrorType::MULTIPLE_KEYS_OF_SAME_TYPE, i-1};
+          return EvalReturn{ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE, static_cast<int>(sortIndex[i-1]), 1};
         }
       }
 
@@ -715,7 +708,7 @@ class KeyGenClass
         // no more passed keys to parse, and function key is NOT optional
         if (iArg >= nbPassedArgs+offset && !functionKeyIsOptional[iArg])
         {
-          return EvalReturn{ErrorType::MISSING_KEY, iArg};
+          return EvalReturn{ErrorType::MISSING_KEY, iArg, 0};
         }
         // no more passed keys to parse and function key IS optional 
         else if (iArg >= nbPassedArgs+offset && functionKeyIsOptional[iArg])
@@ -725,13 +718,13 @@ class KeyGenClass
         // function key should never be larger than the pass key
         else if (functionLocalKeyIDs[iArg] > passedSortedKeyIDs[iArg-offset])
         {
-          return EvalReturn{ErrorType::INVALID_KEY, iArg-offset};
+          return EvalReturn{ErrorType::INVALID_KEY, static_cast<int>(sortIndex[iArg-offset]), 1};
         }
         // if the function key is smaller, some key might be missing - check if optional
         else if (functionLocalKeyIDs[iArg] < passedSortedKeyIDs[iArg-offset] 
                  && !functionKeyIsOptional[iArg])
         {
-          return EvalReturn{ErrorType::MISSING_KEY, iArg};
+          return EvalReturn{ErrorType::MISSING_KEY, iArg, 0};
         }
         // same as above. but incrementing offset
         else if (functionLocalKeyIDs[iArg] < passedSortedKeyIDs[iArg-offset] 
@@ -741,16 +734,48 @@ class KeyGenClass
         }
       }
 
-      return EvalReturn{ErrorType::NONE, 0};
+      return EvalReturn{ErrorType::NONE, 0, 0};
     
     }
     
     template <class... Any>
     constexpr inline static bool evalAnyError()
     {
-      constexpr EvalReturn error = evalAny<Any...>();
+      // check for too many args to avoid further error messages and clogging up compiler output
+      if constexpr (sizeof...(Any) > sizeof...(TFunctionKeys))
+      {
+        failWithMessage<ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION, sizeof...(Any),
+          sizeof...(TFunctionKeys)>();
+        return false;
+      } 
+      else 
+      {
 
-      failWithMessage<error.errorType>();
+        constexpr EvalReturn error = evalAny<Any...>();
+      
+        if constexpr (error.errorType != ErrorType::NONE)
+        {
+          constexpr size_t idx = static_cast<size_t>(error.id);
+      
+          if constexpr ( error.isFuncID == 0 )
+          {
+            using KeyType = typename std::tuple_element<idx, std::tuple<TFunctionKeys...> >::type;
+            constexpr auto keyName = KeyType::name;
+            failWithMessage<error.errorType, keyName>();
+          }
+          else if constexpr ( error.isFuncID > 0) 
+          {
+            using KeyType = typename std::tuple_element<idx, std::tuple<Any...> >::type::keyType;
+            constexpr auto keyName = KeyType::name;
+            failWithMessage<error.errorType, keyName>();
+          }
+          else 
+          {
+            failWithMessage<error.errorType, error.id>();
+          }
+          return false;
+        }
+      }      
 
       return true;
     }
@@ -899,6 +924,18 @@ constexpr int64_t uniqueID(const char* seed)
 
 #define PARAM(name, ...) \
   const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
+
+#define PARAM2(name, ...) \
+  enum _ENUM_##name {     \
+    _KEY_##name           \
+  };                      \
+  const inline static Key< __VA_ARGS__, UNIQUE(name), _KEY_##name> name;
+
+#define OPTPARAM2(name, ...) \
+  enum _ENUM_##name {     \
+    _KEY_##name           \
+  };                      \
+  const inline static Key< std::optional< __VA_ARGS__ >, UNIQUE(name), _KEY_##name> name;
 
 #define OPTPARAM(name, ...) const inline static Key<std::optional< __VA_ARGS__ >, UNIQUE(name)> name;
 #define PARAMETRIZE(function, ...) const inline KeyGenClass np##_##function(&function, __VA_ARGS__);

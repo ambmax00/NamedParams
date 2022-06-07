@@ -6,12 +6,12 @@ int func_base(int a, float& b, double c, std::optional<int> d, std::optional<std
 }
 
 
-KEY((int), 0) keyA;
-KEY((float&), 1) keyB;
-KEY((double), 2) keyC;
-KEYOPT((int), 3) keyD;
-KEYOPT((std::string), 4) keyE;
-KEY((int),5) keyINVALID;
+PARAM2(keyA, int);
+PARAM2(keyB, float&);
+PARAM2(keyC, double);
+OPTPARAM2(keyD, int);
+OPTPARAM2(keyE, std::string);
+PARAM2(keyINVALID, int);
  
 KEYGEN func(&func_base, keyA, keyB, keyC, keyD, keyE);
  
@@ -22,12 +22,13 @@ int main()
 
 	// missing key
 	ret = func(0, b, keyD=5);
+	ret = func(keyC = 3.0, keyA = 1);
 
 	// invalid key
 	ret = func(0, b, keyINVALID = 5);
 
 	// multiple keys
-	ret = func(keyA = 0, keyA = 1, keyB = b);
+	ret = func(keyA = 0, keyB = b, keyA = 1);
 
 	// positional after key
 	ret = func(keyA = 0, b);
