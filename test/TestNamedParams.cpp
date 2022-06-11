@@ -57,6 +57,17 @@ OPTPARAM(keyE, int)
 
 PARAMETRIZE(sum, keyA, keyB, keyC, keyD, keyE)
 
+int sumPointer(int* p0, int const* p1, const int* p2)
+{
+  return *p0 + *p1 + *p2;
+}
+
+PARAM2(keyP0, int*)
+PARAM2(keyP1, int const*)
+PARAM2(keyP2, const int*)
+
+PARAMETRIZE(sumPointer, keyP0, keyP1, keyP2)
+
 int singleArgument(std::optional<int> _i)
 {
   return _i ? *_i : 0;
@@ -173,6 +184,14 @@ int main()
   int sum = np_sum(keyA = 1, keyB = 2, keyD = 4);
 
   CHECK_EQUAL(sum, 9, result);
+
+  int i0 = 0;
+  const int i1 = 1;
+  int i2 = 2;
+
+  int sumP = np_sumPointer(keyP0 = &i0, keyP1 = &i1, keyP2 = &i2);
+
+  CHECK_EQUAL(sumP, 3, result);
   
   Test t0 = Test::buildWrapper(Test::paramF = 3.14, Test::paramS = "HELLO", Test::paramI = 1);
   CHECK_EQUAL(t0.m_int, 1, result);

@@ -361,7 +361,7 @@ struct RemoveConstIfNotReference
 };
 
 template <class TFunctionPtr, class... TFunctionKeys, size_t... Is>
-constexpr inline static int KeyTypesAreValid(std::index_sequence<Is...> const &)
+constexpr inline int KeyTypesAreValid(std::index_sequence<Is...> const &)
 {
   // passing const by value to a function has no effect, and so decays to non-const
   // in function pointer. We therefore also remove const here
@@ -388,7 +388,7 @@ constexpr inline static int KeyTypesAreValid(std::index_sequence<Is...> const &)
 }
 
 template <class... TFunctionKeys>
-constexpr inline static int MultipleIdenticalKeys()
+constexpr inline int MultipleIdenticalKeys()
 {
   std::array<int64_t, sizeof...(TFunctionKeys)> keyIDs = { TFunctionKeys::ID... };
   _sort(keyIDs.begin(), keyIDs.end());
@@ -396,14 +396,14 @@ constexpr inline static int MultipleIdenticalKeys()
   {
     if (keyIDs[i-1] == keyIDs[i])
     {
-      return i;
+      return i-1;
     }
   }
   return -1;
 } 
 
 template <class TFunctionPtr, class... TFunctionKeys>
-constexpr inline static bool KeyGenTemplateIsValid() 
+constexpr inline bool KeyGenTemplateIsValid() 
 {
   // Check if TFunctionPtr is really a (member) function pointer
   // This is necessary because templates are checked for both constructors
@@ -437,7 +437,7 @@ constexpr inline static bool KeyGenTemplateIsValid()
     constexpr int duplicateKey = MultipleIdenticalKeys<TFunctionKeys...>();
     if constexpr (duplicateKey >= 0)
     {
-      failWithMessage<ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN>();
+      failWithMessage<ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN, duplicateKey>();
       return false;
     }
 
@@ -918,7 +918,7 @@ class KeyGenClass
 
       constexpr auto offsets = getOffsets(sortedPassedLocalKeys);
 
-      return call(std::forward<typename KeyFunctionTraits::arg<Is>::type>(
+      return call(std::forward<typename KeyFunctionTraits::template arg<Is>::type>(
         process<typename std::tuple_element<Is, std::tuple<TFunctionKeys...>>::type, 
                 Is, nbPositionals, nbPassedArgs>
         (sortedPassedKeyAddresses, sortedPassedLocalKeys, offsets[Is]))...);
