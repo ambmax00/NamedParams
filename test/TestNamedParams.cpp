@@ -44,13 +44,13 @@ PARAM(str1, std::string&)
 PARAMETRIZE(concat, str0, str1)
 
 // function for testing optional params
-int sum(int _a, int _b, std::optional<int> _c, std::optional<int> _d, std::optional<int> _e) 
+int sum(int _a, const int _b, std::optional<int> _c, std::optional<int> _d, std::optional<int> _e) 
 {
   return _a + _b + (_c ? *_c : 0) + (_d ? *_d : 1) + (_e ? *_e : 2);
 }
 
-PARAM(keyA, int)
-PARAM(keyB, int)
+PARAM2(keyA, int)
+PARAM2(keyB, const int)
 OPTPARAM(keyC, int)
 OPTPARAM(keyD, int)
 OPTPARAM(keyE, int)

@@ -339,13 +339,40 @@ struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraitsBase<R(Args...)>
   typedef C ClassType;
 };
 
+template <class T, bool B>
+struct _RemoveConstIfNotReferenceImpl;
+
+template <class T>
+struct _RemoveConstIfNotReferenceImpl<T,false>
+{
+  typedef T type;
+};
+
+template <class T>
+struct _RemoveConstIfNotReferenceImpl<T,true>
+{
+  typedef typename std::remove_const<T>::type type;
+};
+
+template <class T>
+struct RemoveConstIfNotReference
+{
+  typedef typename _RemoveConstIfNotReferenceImpl<T,!std::is_reference<T>::value>::type type;
+};
+
 template <class TFunctionPtr, class... TFunctionKeys, size_t... Is>
 constexpr inline static int KeyTypesAreValid(std::index_sequence<Is...> const &)
 {
+  // passing const by value to a function has no effect, and so decays to non-const
+  // in function pointer. We therefore also remove const here
+  using KeyTuple = std::tuple<typename RemoveConstIfNotReference<
+    typename TFunctionKeys::type>::type...>;
+  using TFunctionTraits = FunctionTraits<typename std::remove_pointer<TFunctionPtr>::type>;
+
   constexpr std::array<bool,sizeof...(TFunctionKeys)> keyTypesCompare = {
     std::is_same<
-      typename std::tuple_element<Is, std::tuple<typename TFunctionKeys::type...>>::type, 
-      typename FunctionTraits<typename std::remove_pointer<TFunctionPtr>::type>::template arg<Is>::type
+      typename std::tuple_element<Is, KeyTuple>::type, 
+      typename TFunctionTraits::template arg<Is>::type
     >::value...};
 
   for (int i = 0; i < (int)sizeof...(TFunctionKeys); ++i)
@@ -791,7 +818,7 @@ class KeyGenClass
     template <class TKey, int Idx, int NbPositionals, int NbArgs>
     typename TKey::type process(const std::array<void*,NbArgs>& _addresses,
                                 const std::array<int64_t,NbArgs>& _keyIDs,
-                                int _offset) const
+                                const int _offset) const
     { 
       if constexpr (Idx >= NbPositionals) 
       {
