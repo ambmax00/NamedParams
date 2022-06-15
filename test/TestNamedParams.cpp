@@ -209,6 +209,7 @@ OPTPARAM2(keyI19, int)
 PARAMETRIZE(manyArgs, keyI0, keyI1, keyI2, keyI3, keyI4, keyI5, keyI6, keyI7, keyI8, keyI9,
             keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,keyI19)
 
+inline static Key<float, -1> f;
 
 int main()
 {

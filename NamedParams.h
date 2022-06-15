@@ -124,7 +124,8 @@ enum DefaultKeyName
   UNNAMED_KEY
 };
 
-template <class T, int64_t N, auto E = DefaultKeyName::UNNAMED_KEY>
+template <class T, int64_t N, auto E = DefaultKeyName::UNNAMED_KEY, 
+  std::enable_if_t<(N >= 0),bool> = true>
 class Key;
 
 template <class T>
@@ -277,7 +278,7 @@ constexpr void failWithMessage()
  * The Key class does not keep any record of the variable it is assigned to,
  * but delegates the work to AssignedKey.
  */
-template <typename T, int64_t UNIQUE_ID, auto E>  // disable negative numbers
+template <typename T, int64_t UNIQUE_ID, auto E, std::enable_if_t<(UNIQUE_ID >= 0),bool>> 
 class Key
 {
   private:
@@ -511,6 +512,13 @@ class KeyGenClass
       int isFuncID; // wether id refers to TFunctionKeys (0), Any (pos) or None (neg)
     };
 
+    enum KeyIdType 
+    {
+      POSITIONAL = -1,
+      UNKNOWN = -2,
+      ABSENT = -3
+    };
+
     // get local key IDs for passed arguments
     // unknown arguments are given ID = -2
     // positional arguments are given ID = -1
@@ -526,7 +534,7 @@ class KeyGenClass
       {
         if (passedKeyIDs[i] < 0)
         {
-          passedLocalKeyIDs[i] = -1;
+          passedLocalKeyIDs[i] = KeyIdType::POSITIONAL;
           continue;
         }
 
@@ -534,7 +542,7 @@ class KeyGenClass
 
         if (iter == m_functionKeyIDs.end())
         {
-          passedLocalKeyIDs[i] = -2;
+          passedLocalKeyIDs[i] = KeyIdType::UNKNOWN;
         }
         else 
         {
@@ -600,7 +608,7 @@ class KeyGenClass
     template <class D>
     struct GetArgumentID 
     {
-      const inline static int64_t ID = -1;
+      const inline static int64_t ID = KeyIdType::POSITIONAL;
     };
 
     template <class D>
@@ -709,7 +717,7 @@ class KeyGenClass
       // check if unknown key present
       for (int i = nbPositionalArgs; i < nbPassedArgs; ++i)
       {
-        if (passedLocalKeyIDs[i] == -2) 
+        if (passedLocalKeyIDs[i] == KeyIdType::UNKNOWN) 
         {
           return EvalReturn{ErrorType::INVALID_KEY,i,1};
         }
@@ -841,7 +849,7 @@ class KeyGenClass
     };
 
     template <int Idx>
-    struct ConvertToType<Idx,-2>
+    struct ConvertToType<Idx,KeyIdType::ABSENT>
     {
       using type = std::nullopt_t;
     };
@@ -884,13 +892,13 @@ class KeyGenClass
       // now form a padded index list
       // paddedList[i] will return the position of key with id=i in the argument list
       // if entry is -1, it is a positional
-      // if entry is -2, it is not present in the argument list
+      // if entry is -3, it is not present in the argument list
       constexpr auto getPaddedList = [](auto& _sortedKeys, auto& _indices)
       {
         std::array<int64_t, nbFunctionKeys> outList = {};
         for (int i = 0; i < nbPositionals; ++i)
         {
-          outList[i] = -1;
+          outList[i] = KeyIdType::POSITIONAL;
         }
 
         int offset = 0;
@@ -903,7 +911,7 @@ class KeyGenClass
           else 
           {
             ++offset;
-            outList[i] = -2;
+            outList[i] = KeyIdType::ABSENT;
           }
         }
 
@@ -927,7 +935,7 @@ class KeyGenClass
       for (int i = nbPositionals; i < nbFunctionKeys; ++i)
       {
         int idx = paddedList[i];
-        paddedAddresses[i] = (idx == -2) ? m_nullOpt : addresses[paddedList[i]];
+        paddedAddresses[i] = (idx == KeyIdType::ABSENT) ? m_nullOpt : addresses[paddedList[i]];
       }
 
       return call(std::forward<typename ConvertToType<Is,paddedList[Is]>::type>
