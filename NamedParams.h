@@ -2,6 +2,7 @@
 #define NAMED_PARAMS_H
 
 #include <array>
+#include <chrono>
 #include <functional>
 #include <numeric>
 #include <optional>
@@ -463,6 +464,9 @@ class KeyGenClass
     constexpr inline static std::array<int64_t, KeyFunctionTraits::nbArgs> m_functionKeyIDs = { 
       TFunctionKeys::ID... };
 
+    // placeholder for unused optional arguments
+    std::nullopt_t* m_nullOpt;
+
   public:
 
     template <class DFunctionPtr, class... DFunctionKeys,
@@ -473,6 +477,7 @@ class KeyGenClass
     KeyGenClass(DFunctionPtr _function, [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(nullptr)
       , m_baseFunction(_function)
+      , m_nullOpt(new std::nullopt_t(std::nullopt))
     {
     }
 
@@ -485,10 +490,14 @@ class KeyGenClass
       [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
+      , m_nullOpt(new std::nullopt_t(std::nullopt))
     {
     }
 
-    ~KeyGenClass() {}
+    ~KeyGenClass() 
+    {
+      delete m_nullOpt;
+    }
 
     std::function<TFunctionPtr> getBaseFunction() const
     {
@@ -808,66 +817,57 @@ class KeyGenClass
     }
     
     template <class... Any, std::enable_if_t<evalAnyError<Any...>(), int> = 0>
-    typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
+    inline typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
     {
-      return internal2<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(TFunctionKeys)>{});
+      return internal3<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(TFunctionKeys)>{});
     }
 
-    
-
-    template <class TKey, int Idx, int NbPositionals, int NbArgs>
-    typename TKey::type process(const std::array<void*,NbArgs>& _addresses,
-                                const std::array<int64_t,NbArgs>& _keyIDs,
-                                const int _offset) const
-    { 
-      if constexpr (Idx >= NbPositionals) 
-      {
-        if constexpr (IsOptional<typename TKey::type>::value)
-        {
-          // no more passed keys left, return emptfOffsety optional
-          if (Idx >= NbArgs + _offset)
-          {
-            typename TKey::type out = std::nullopt;
-            return out;
-          }
-          // function paramter nr. _idx not present, fill with nullopt
-          if (_keyIDs[Idx - _offset] > Idx) 
-          {
-            typename TKey::type out = std::nullopt;
-            return out;
-          } 
-        }
-        // same key, transfer ownership
-        if (_keyIDs[Idx - _offset] == Idx)
-        {
-          auto pAssignedKey = (AssignedKey<TKey>*)_addresses[Idx -_offset];
-          return *pAssignedKey->getValue();
-        }
-      }
-      else 
-      {
-        // positionals are guaranteed to be in order and not skip any arguments
-        // remove reference to avoid pointer to reference
-        return *((typename std::remove_reference<typename TKey::type>::type*)
-          _addresses[Idx -_offset]);
-      }
-
-      // SHOULD NOT HAPPEN
-      throw std::runtime_error("This should not happen");
+    template <typename T, std::enable_if_t<IsAssignedKey<T>::value,bool> = true>
+    inline void* getAddress(T& _assignedKey) const
+    {
+      return (void*)_assignedKey.getValue();
     }
+
+    template <typename T, std::enable_if_t<!IsAssignedKey<T>::value,int> = 0>
+    inline void* getAddress(T& _value) const
+    {
+      return (void*)&_value;
+    }
+
+    template <int Idx, int KeyID>
+    struct ConvertToType
+    {
+      using type = typename KeyFunctionTraits::template arg<Idx>::type;
+    };
+
+    template <int Idx>
+    struct ConvertToType<Idx,-2>
+    {
+      using type = std::nullopt_t;
+    };
 
     template <class... Any, size_t... Is>
-    typename KeyFunctionTraits::ResultType internal2(Any&&... _args, std::index_sequence<Is...> const &) const
+    typename KeyFunctionTraits::ResultType internal3(Any&&... _args, std::index_sequence<Is...> const &) const
     {
+
       auto constexpr group = getNb<Any...>();
       constexpr int nbPositionals = group.first;
       constexpr int nbPassedArgs = sizeof...(Any);
+      constexpr int nbFunctionKeys = sizeof...(TFunctionKeys);
 
+      // potentially unordered local key
+      // "local" meaning relative to function keys
+      // e.g. for keys passed to KeyGen (1515, 845, 1233) 
+      //      keys passed to function (845, 1515) become (1,0)
       constexpr std::array<int64_t,nbPassedArgs> passedLocalKeys = getLocalKeyIDs<Any...>();
-      constexpr std::array<int64_t,nbPassedArgs> sortedIndices = getSortedIndices<Any...>(passedLocalKeys);
-      
-      std::array<void*,nbPassedArgs> passedKeyAddresses = { (void*)&_args... };
 
+      // get indices which will sort the local keys
+      // indices[i] will give you the position in the arg list of key with id=i 
+      // (positionals still have id=-1)
+      constexpr std::array<int64_t,nbPassedArgs> sortedIndices = 
+        getSortedIndices<Any...>(passedLocalKeys);
+
+      // sort the local keys to get an idea of which ones are missing more easily
       constexpr auto sortByIndex = [](auto& _indices, const auto& _array)
       {
         std::array<int64_t, nbPassedArgs> out = {};
@@ -878,66 +878,79 @@ class KeyGenClass
         return out;
       };
 
-      // evaluated at compile time
       constexpr std::array<int64_t,nbPassedArgs> sortedPassedLocalKeys 
         = sortByIndex(sortedIndices, passedLocalKeys);
-
-      // not evaluated at compile time
-      std::array<void*,nbPassedArgs> sortedPassedKeyAddresses = {};
-
-      for (int i = 0; i < nbPassedArgs; ++i)
+      
+      // now form a padded index list
+      // paddedList[i] will return the position of key with id=i in the argument list
+      // if entry is -1, it is a positional
+      // if entry is -2, it is not present in the argument list
+      constexpr auto getPaddedList = [](auto& _sortedKeys, auto& _indices)
       {
-        int64_t idx = sortedIndices[i];
-        sortedPassedKeyAddresses[i] = passedKeyAddresses[idx];
-      }
-
-      // get offsets: if there are some optional args missing, the following args that are present
-      // have an offset equalling the number of missing keys. 
-      // this will be useful below for passing the correct values to call()
-      constexpr auto getOffsets = [](const auto& _keys)
-      {
-        std::array<int, sizeof...(TFunctionKeys)> out = {};
-        int fOffset = 0;
-
-        for (int i = 0; i < (int)sizeof...(TFunctionKeys); ++i)
+        std::array<int64_t, nbFunctionKeys> outList = {};
+        for (int i = 0; i < nbPositionals; ++i)
         {
-          if ((size_t)(i-fOffset) < _keys.size() 
-              && (_keys[i-fOffset] == (int64_t)i || _keys[i-fOffset] == -1))
+          outList[i] = -1;
+        }
+
+        int offset = 0;
+        for (int i = nbPositionals; i < nbFunctionKeys; ++i)
+        {
+          if (i-offset < nbPassedArgs && _sortedKeys[i-offset] == i)
           {
-            out[i] = fOffset;
+            outList[i] = _indices[i-offset];
           }
           else 
           {
-            out[i] = fOffset;
-            ++fOffset;
+            ++offset;
+            outList[i] = -2;
           }
         }
 
-        return out;
+        return outList;
       };
 
-      constexpr auto offsets = getOffsets(sortedPassedLocalKeys);
+      constexpr std::array<int64_t,nbFunctionKeys> paddedList = 
+        getPaddedList(sortedPassedLocalKeys,sortedIndices);
 
-      return call(std::forward<typename KeyFunctionTraits::template arg<Is>::type>(
-        process<typename std::tuple_element<Is, std::tuple<TFunctionKeys...>>::type, 
-                Is, nbPositionals, nbPassedArgs>
-        (sortedPassedKeyAddresses, sortedPassedLocalKeys, offsets[Is]))...);
-       
-      //CONST ???? COMMIT
+      // now get Addresses
+      std::array<void*,nbPassedArgs> addresses = { (void*)getAddress<Any>(_args)... };
+
+      // padd them. put nullptr for absent args
+      std::array<void*,nbFunctionKeys> paddedAddresses = {};
+
+      for (int i = 0; i < nbPositionals; ++i)
+      {
+        paddedAddresses[i] = addresses[i];
+      }      
+
+      for (int i = nbPositionals; i < nbFunctionKeys; ++i)
+      {
+        int idx = paddedList[i];
+        paddedAddresses[i] = (idx == -2) ? m_nullOpt : addresses[paddedList[i]];
+      }
+
+      return call(std::forward<typename ConvertToType<Is,paddedList[Is]>::type>
+                  (
+                    *((typename std::remove_reference<
+                       typename ConvertToType<Is,paddedList[Is]>::type>::type*)
+                      (paddedAddresses[Is]))
+                  )...);
+      
     }
 
     template <typename DFunctionPtr = TFunctionPtr, 
       std::enable_if_t<std::is_member_function_pointer<DFunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type&&... _args) const
+    inline typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type&&... _args) const
     {
-      return (m_classPtr->*m_baseFunction)(_args...);
+      return (m_classPtr->*m_baseFunction)(std::forward<typename TFunctionKeys::type>(_args)...);
     }
 
     template <typename DFunctionPtr = TFunctionPtr, 
       std::enable_if_t<!std::is_member_function_pointer<DFunctionPtr>::value,bool> = true>
-    typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type&&... _args) const
+    inline typename KeyFunctionTraits::ResultType call(typename TFunctionKeys::type&&... _args) const
     {
-      return m_baseFunction(_args...);
+      return m_baseFunction(std::forward<typename TFunctionKeys::type>(_args)...);
     }
 
 };

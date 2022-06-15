@@ -1,4 +1,5 @@
 #include "../NamedParams.h"
+#include <chrono>
 #include <iostream>
 #include <string>
 
@@ -161,6 +162,54 @@ class Test
   
 };
 
+using intOpt = std::optional<int>;
+#define ADD_OPT(name) \
+  if (name) sum += *name;
+
+int manyArgs(int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7, int i8, int i9,
+             intOpt i10, intOpt i11, intOpt i12, intOpt i13, intOpt i14, intOpt i15, intOpt i16, 
+             intOpt i17, intOpt i18, intOpt i19)
+{
+  int sum = 0;
+  ADD_OPT(i10) 
+  ADD_OPT(i11) 
+  ADD_OPT(i12) 
+  ADD_OPT(i13) 
+  ADD_OPT(i14) 
+  ADD_OPT(i15) 
+  ADD_OPT(i16) 
+  ADD_OPT(i17) 
+  ADD_OPT(i18)
+  ADD_OPT(i19) 
+
+  return i0+i1+i2+i3+i4+i5+i6+i7+i8+i9 + sum;
+}
+
+PARAM2(keyI0, int)
+PARAM2(keyI1, int)
+PARAM2(keyI2, int)
+PARAM2(keyI3, int)
+PARAM2(keyI4, int)
+PARAM2(keyI5, int)
+PARAM2(keyI6, int)
+PARAM2(keyI7, int)
+PARAM2(keyI8, int)
+PARAM2(keyI9, int)
+OPTPARAM2(keyI10, int)
+OPTPARAM2(keyI11, int)
+OPTPARAM2(keyI12, int)
+OPTPARAM2(keyI13, int)
+OPTPARAM2(keyI14, int)
+OPTPARAM2(keyI15, int)
+OPTPARAM2(keyI16, int)
+OPTPARAM2(keyI17, int)
+OPTPARAM2(keyI18, int)
+OPTPARAM2(keyI19, int)
+
+PARAMETRIZE(manyArgs, keyI0, keyI1, keyI2, keyI3, keyI4, keyI5, keyI6, keyI7, keyI8, keyI9,
+            keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,keyI19)
+
+
 int main()
 {
 
@@ -205,6 +254,24 @@ int main()
   CHECK_ALMOST_EQUAL(val, 11.0, result);
 
   //testKey.test<0>();
+  auto start = std::chrono::steady_clock::now();
+  int sumArgs = np_manyArgs(keyI5 = 5, keyI0 = 0, keyI1 = 1, keyI2 = 2, keyI6 = 6, keyI7 = 7, keyI15 = 15,
+                            keyI10 = 10, keyI3 = 3, keyI9 = 9, keyI8 = 8, keyI4 = 4, keyI16 = 16);
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> elapsed_seconds = end-start;
+  std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";  
+
+  CHECK_EQUAL(sumArgs, 86, result);
+
+  start = std::chrono::steady_clock::now();
+  sumArgs = manyArgs(0,1,2,3,4,5,6,7,8,9,10,std::nullopt,std::nullopt,std::nullopt,std::nullopt,15,
+                    16, std::nullopt, std::nullopt, std::nullopt);
+  end = std::chrono::steady_clock::now();
+  elapsed_seconds = end-start;
+  std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";
+
+  CHECK_EQUAL(sumArgs, 86, result);
+  
 
   return result;
 
