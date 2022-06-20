@@ -27,12 +27,8 @@ std::string word(char _a, char _b, char _c, char _d)
   return out;
 }
 
-PARAM(char0, char)
-PARAM(char1, char)
-PARAM(char2, char)
-PARAM(char3, char)
-
-PARAMETRIZE(word, char0, char1, char2, char3)
+#define WORD_VARS (char0, char1, char2, char3)
+PARAMETRIZE_NEW(word, WORD_VARS)
 
 // function for testing reference passing
 void concat(std::string& _str0, std::string& _str1)
@@ -111,17 +107,14 @@ class Test
     KEY((float), 1) paramF;
     KEYOPT((std::string),2) paramS;
 
-    inline static Key<int,3> paramA;
-    inline static Key<int,4> paramB;
-    inline static Key<float&,5> paramC;
-    inline static Key<std::optional<int>,6> paramD;
-
     Test(int _i, float _f, std::string _s) 
       : m_int(_i)
       , m_float(_f)
       , m_str(_s)
-      , computeW(this, &Test::compute,paramA,paramB,paramC,paramD)
+      , np_compute()
     {
+      np_compute.setFunction(&Test::compute);
+      np_compute.setClassPtr(this);
     }
   
     static Test build(int _i, float _f, std::optional<std::string> _strOpt)
@@ -152,14 +145,10 @@ class Test
       }
     }
 
-    const KeyGenClass<
-      decltype(&Test::compute),
-      decltype(paramA),
-      decltype(paramB),
-      decltype(paramC),
-      decltype(paramD)> 
-    computeW;
-  
+    #define COMPUTE_LIST (paramA, paramB, paramC, paramD)
+    DECLARE_KEYS(&Test::compute, COMPUTE_LIST)
+    DECLARE_CLASS_FUNCTION(np_compute, &Test::compute, COMPUTE_LIST)
+
 };
 
 using intOpt = std::optional<int>;
@@ -209,8 +198,11 @@ OPTPARAM2(keyI19, int)
 PARAMETRIZE(manyArgs, keyI0, keyI1, keyI2, keyI3, keyI4, keyI5, keyI6, keyI7, keyI8, keyI9,
             keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,keyI19)
 
+
 int main()
 {
+
+  
 
   int result = 0;
 
@@ -247,7 +239,7 @@ int main()
   CHECK_EQUAL(t0.m_str, "HELLO", result);
 
   float val = 3.0;
-  int ret6 = t0.computeW(1, 2, Test::paramC = val, Test::paramD = 4);
+  int ret6 = t0.np_compute(1, 2, Test::paramC = val, Test::paramD = 4);
 
   CHECK_EQUAL(ret6, 0, result);
   CHECK_ALMOST_EQUAL(val, 11.0, result);
