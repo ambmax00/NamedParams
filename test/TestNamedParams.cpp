@@ -17,9 +17,6 @@
     _RETURN += 1; \
   } 
 
-#define _MEMKEYGEN() 
-#define MEMKEYGEN()
-
 // function for testing correct order
 std::string word(char _a, char _b, char _c, char _d)
 { 
@@ -28,7 +25,7 @@ std::string word(char _a, char _b, char _c, char _d)
 }
 
 #define WORD_VARS (char0, char1, char2, char3)
-PARAMETRIZE_NEW(word, WORD_VARS)
+PARAMETRIZE(np_word, &word, WORD_VARS)
 
 // function for testing reference passing
 void concat(std::string& _str0, std::string& _str1)
@@ -36,9 +33,8 @@ void concat(std::string& _str0, std::string& _str1)
   _str0 += _str1;
 }
 
-PARAM(str0, std::string&)
-PARAM(str1, std::string&)
-PARAMETRIZE(concat, str0, str1)
+#define CONCAT_VARS (str0, str1)
+PARAMETRIZE(np_concat, &concat, CONCAT_VARS)
 
 // function for testing optional params
 int sum(int _a, const int _b, std::optional<int> _c, std::optional<int> _d, std::optional<int> _e) 
@@ -46,32 +42,24 @@ int sum(int _a, const int _b, std::optional<int> _c, std::optional<int> _d, std:
   return _a + _b + (_c ? *_c : 0) + (_d ? *_d : 1) + (_e ? *_e : 2);
 }
 
-PARAM2(keyA, int)
-PARAM2(keyB, const int)
-OPTPARAM(keyC, int)
-OPTPARAM(keyD, int)
-OPTPARAM(keyE, int)
-
-PARAMETRIZE(sum, keyA, keyB, keyC, keyD, keyE)
+#define SUM_VARS (keyA, keyB, keyC, keyD, keyE)
+PARAMETRIZE(np_sum, &sum, SUM_VARS)
 
 int sumPointer(int* p0, int const* p1, const int* p2)
 {
   return *p0 + *p1 + *p2;
 }
 
-PARAM2(keyP0, int*)
-PARAM2(keyP1, int const*)
-PARAM2(keyP2, const int*)
-
-PARAMETRIZE(sumPointer, keyP0, keyP1, keyP2)
+#define SUM_POINTER_VARS (keyP0, keyP1, keyP2)
+PARAMETRIZE(np_sumPointer, &sumPointer, SUM_POINTER_VARS)
 
 int singleArgument(std::optional<int> _i)
 {
   return _i ? *_i : 0;
 }
 
-OPTPARAM(single, int)
-PARAMETRIZE(singleArgument, single)
+#define SINGLE_ARGUMENT_VARS (single)
+PARAMETRIZE(np_singleArgument, &singleArgument, SINGLE_ARGUMENT_VARS)
 
 class Uncopyable
 {
@@ -86,14 +74,9 @@ int processUncopyable([[maybe_unused]]Uncopyable& _ucopy)
   return 0;
 }
 
-PARAM(pcopy, Uncopyable&)
-PARAMETRIZE(processUncopyable, pcopy)
+#define UNCOPYABLE_VARS (pcopy)
+PARAMETRIZE(np_processUncopyable, &processUncopyable, UNCOPYABLE_VARS)
 
-int foo(float a, int& b)
-{
-  b = 5;
-  return a + b;
-}
 
 class Test
 {
@@ -106,30 +89,6 @@ class Test
     KEY((int), 0) paramI;
     KEY((float), 1) paramF;
     KEYOPT((std::string),2) paramS;
-
-    Test(int _i, float _f, std::string _s) 
-      : m_int(_i)
-      , m_float(_f)
-      , m_str(_s)
-      , np_compute()
-    {
-      np_compute.setFunction(&Test::compute);
-      np_compute.setClassPtr(this);
-    }
-  
-    static Test build(int _i, float _f, std::optional<std::string> _strOpt)
-    {
-      if (_strOpt)
-      {
-        return Test(_i, _f, *_strOpt);
-      }
-      else 
-      {
-        return Test(_i, _f, "");
-      }
-    }
-
-    KEYGEN buildWrapper = KeyGenClass(&Test::build, paramI, paramF, paramS);
 
     int compute(int _a, int _b, float& _c, std::optional<int> _d)
     {
@@ -146,8 +105,29 @@ class Test
     }
 
     #define COMPUTE_LIST (paramA, paramB, paramC, paramD)
-    DECLARE_KEYS(&Test::compute, COMPUTE_LIST)
-    DECLARE_CLASS_FUNCTION(np_compute, &Test::compute, COMPUTE_LIST)
+    CLASS_PARAMETRIZE(np_compute, &Test::compute, COMPUTE_LIST)
+
+    Test(int _i, float _f, std::string _s) 
+      : m_int(_i)
+      , m_float(_f)
+      , m_str(_s)
+      , INIT_CLASS_FUNCTION(np_compute, &Test::compute, COMPUTE_LIST)
+    {
+    }
+  
+    static Test build(int _i, float _f, std::optional<std::string> _strOpt)
+    {
+      if (_strOpt)
+      {
+        return Test(_i, _f, *_strOpt);
+      }
+      else 
+      {
+        return Test(_i, _f, "");
+      }
+    }
+
+    KEYGEN buildWrapper = KeyGenClass(&Test::build, paramI, paramF, paramS);
 
 };
 
@@ -174,30 +154,11 @@ int manyArgs(int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7, int
   return i0+i1+i2+i3+i4+i5+i6+i7+i8+i9 + sum;
 }
 
-PARAM2(keyI0, int)
-PARAM2(keyI1, int)
-PARAM2(keyI2, int)
-PARAM2(keyI3, int)
-PARAM2(keyI4, int)
-PARAM2(keyI5, int)
-PARAM2(keyI6, int)
-PARAM2(keyI7, int)
-PARAM2(keyI8, int)
-PARAM2(keyI9, int)
-OPTPARAM2(keyI10, int)
-OPTPARAM2(keyI11, int)
-OPTPARAM2(keyI12, int)
-OPTPARAM2(keyI13, int)
-OPTPARAM2(keyI14, int)
-OPTPARAM2(keyI15, int)
-OPTPARAM2(keyI16, int)
-OPTPARAM2(keyI17, int)
-OPTPARAM2(keyI18, int)
-OPTPARAM2(keyI19, int)
+#define MANY_ARGS_VARS (keyI0, keyI1, keyI2, keyI3, keyI4, keyI5, keyI6, keyI7, keyI8, keyI9,\
+                        keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,\
+                        keyI19)
 
-PARAMETRIZE(manyArgs, keyI0, keyI1, keyI2, keyI3, keyI4, keyI5, keyI6, keyI7, keyI8, keyI9,
-            keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,keyI19)
-
+PARAMETRIZE(np_manyArgs, &manyArgs, MANY_ARGS_VARS)
 
 int main()
 {

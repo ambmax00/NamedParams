@@ -252,7 +252,7 @@ enum class ErrorType
   TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION = 5,
   KEY_HAS_WRONG_TYPE = 6,
   COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE = 7,
-  TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN = 8,
+  INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN = 8,
   SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN = 9
 };
 
@@ -267,7 +267,7 @@ constexpr void failWithMessage()
   static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION));
   static_assert((error != ErrorType::KEY_HAS_WRONG_TYPE));
   static_assert((error != ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE));
-  static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN));
+  static_assert((error != ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN));
 }
 
 /**
@@ -421,7 +421,7 @@ constexpr inline bool KeyGenTemplateIsValid()
     if constexpr (nbFunctionArgs != nbKeys)
     {
       failWithMessage<
-        ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_KEYGEN,
+        ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN,
         nbFunctionArgs,nbKeys>();
       return false;
     }
@@ -1024,22 +1024,16 @@ constexpr int64_t uniqueID(const char* seed)
 #define UNIQUE(name) uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
 
 #define PARAM(name, ...) \
-  const inline static Key< __VA_ARGS__, UNIQUE(name)> name;
-
-#define PARAM2(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
   const inline static Key< __VA_ARGS__, UNIQUE(name), _KEY_##name> name;
 
-#define OPTPARAM2(name, ...) \
+#define OPTPARAM(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
   const inline static Key< std::optional< __VA_ARGS__ >, UNIQUE(name), _KEY_##name> name;
-
-#define OPTPARAM(name, ...) const inline static Key<std::optional< __VA_ARGS__ >, UNIQUE(name)> name;
-#define PARAMETRIZE(function, ...) const inline KeyGenClass np##_##function(&function, __VA_ARGS__);
 
 #define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
 #define PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
@@ -1090,12 +1084,15 @@ constexpr int64_t uniqueID(const char* seed)
 #define _ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,30, NELE) UNPAREN DELIM _ITERATE_30(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
 #define _ITERATE_32(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,31, NELE) UNPAREN DELIM _ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
 
+#define _ECHO(func, name, i, nele) \
+  name
 
 #define _GEN_KEY(func, name, i, nele) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static Key<FunctionTraits<decltype(func)>::arg<nele-i-1>::type, \
+  const inline static Key<\
+    FunctionTraits<std::remove_pointer<decltype(func)>::type>::arg<nele-i-1>::type,\
     UNIQUE(name), _KEY_##name> name; 
 
 #define _DECLTYPE(func, name, i, nele) \
@@ -1104,13 +1101,18 @@ constexpr int64_t uniqueID(const char* seed)
 #define DECLARE_KEYS(func, list) \
   ITERATE_LIST(_GEN_KEY, (), (), func, list) 
 
-#define DECLARE_CLASS_FUNCTION(functionName, function, list) \
+#define CLASS_PARAMETRIZE(functionName, function, list) \
+  DECLARE_KEYS(function, list)\
   KeyGenClass<decltype(function), \
     ITERATE_LIST(_DECLTYPE, (,), (), function, list)> \
     functionName;
 
-#define PARAMETRIZE_NEW(func, list) \
-  DECLARE_KEYS(func, list) \
-  const inline KeyGenClass np##_##func(&func, UNPAREN list);
+#define INIT_CLASS_FUNCTION(functionName, function, list) \
+  functionName(this, function, \
+    ITERATE_LIST(_ECHO, (,), (), function, list))
+
+#define PARAMETRIZE(functionName, function, list) \
+  DECLARE_KEYS(function, list) \
+  const inline KeyGenClass functionName(function, UNPAREN list);
 
 #endif // NAMED_PARAMS_H

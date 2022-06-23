@@ -5,16 +5,11 @@ int func_base(int a, float& b, double c, std::optional<int> d, std::optional<std
 	return 0;
 }
 
+#define VARS (keyA, keyB, keyC, keyD, keyE)
+PARAMETRIZE(func, &func_base, VARS)
 
-PARAM2(keyA, int);
-PARAM2(keyB, float&);
-PARAM2(keyC, double);
-OPTPARAM2(keyD, int);
-OPTPARAM2(keyE, std::string);
-PARAM2(keyINVALID, int);
- 
-KEYGEN func(&func_base, keyA, keyB, keyC, keyD, keyE);
- 
+PARAM(keyINVALID, int);
+  
 int main() 
 {
 	int ret;
