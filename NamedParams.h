@@ -2,14 +2,10 @@
 #define NAMED_PARAMS_H
 
 #include <array>
-#include <chrono>
 #include <functional>
-#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <tuple>
-
-#include <iostream>
 
 #ifndef USE_CXX_20
 
@@ -495,26 +491,9 @@ class KeyGenClass
     {
     }
 
-    KeyGenClass()
-      : m_classPtr(nullptr)
-      , m_baseFunction()
-      , m_nullOpt(new std::nullopt_t(std::nullopt))
-    {
-    }
-
     ~KeyGenClass() 
     {
       delete m_nullOpt;
-    }
-
-    void setFunction(TFunctionPtr _function)
-    {
-      m_baseFunction = _function;
-    }
-
-    void setClassPtr(typename KeyFunctionTraits::ClassType* _classPtr)
-    {
-      m_classPtr = _classPtr;
     }
 
     std::function<TFunctionPtr> getBaseFunction() const
@@ -1046,7 +1025,7 @@ constexpr int64_t uniqueID(const char* seed)
 #define WRAP(FUNC, ...)
 
 #define NARGS_SEQ(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, N, ...) N
-#define NARGS(...) NARGS_SEQ(0, ##__VA_ARGS__,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
+#define NARGS(...) NARGS_SEQ(0, __VA_ARGS__,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
 
 #define ITERATE_LIST(FUNC, DELIM, SUFFIX, constant, list) ITERATE(FUNC, DELIM, SUFFIX, constant, UNPAREN list)
 #define ITERATE(FUNC, DELIM, SUFFIX, constant, ...) CAT(_ITERATE_, NARGS(__VA_ARGS__))(FUNC, NARGS(__VA_ARGS__), DELIM, SUFFIX, constant, __VA_ARGS__)

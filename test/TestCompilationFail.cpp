@@ -1,6 +1,7 @@
 #include "../NamedParams.h"
 
 #include <fstream>
+#include <iostream>
 #include <map>
 
 #cmakedefine OUTPUT_FILENAME "@OUTPUT_FILENAME@"

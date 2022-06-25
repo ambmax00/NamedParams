@@ -163,8 +163,6 @@ PARAMETRIZE(np_manyArgs, &manyArgs, MANY_ARGS_VARS)
 int main()
 {
 
-  
-
   int result = 0;
 
   std::string str = np_word(char2 = 'r', char1 = 'o', char3 = 'd', char0 = 'w');
@@ -207,8 +205,9 @@ int main()
 
   //testKey.test<0>();
   auto start = std::chrono::steady_clock::now();
-  int sumArgs = np_manyArgs(keyI5 = 5, keyI0 = 0, keyI1 = 1, keyI2 = 2, keyI6 = 6, keyI7 = 7, keyI15 = 15,
-                            keyI10 = 10, keyI3 = 3, keyI9 = 9, keyI8 = 8, keyI4 = 4, keyI16 = 16);
+  int sumArgs = np_manyArgs(keyI5 = 5, keyI0 = 0, keyI1 = 1, keyI2 = 2, keyI6 = 6, keyI7 = 7, 
+                            keyI15 = 15, keyI10 = 10, keyI3 = 3, keyI9 = 9, keyI8 = 8, keyI4 = 4, 
+                            keyI16 = 16);
   auto end = std::chrono::steady_clock::now();
   std::chrono::duration<double> elapsed_seconds = end-start;
   std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";  

@@ -10,7 +10,7 @@ print("#define NARGS_SEQ(", end='')
 for ele in listfront:
     print(ele, end='')
 print("N, ...) N", end='\n')
-print("#define NARGS(...) NARGS_SEQ(0, ##__VA_ARGS__,", end='')
+print("#define NARGS(...) NARGS_SEQ(0, __VA_ARGS__,", end='')
 for ele in listback:
     print(ele, end='')
 print("0)",end='\n')
