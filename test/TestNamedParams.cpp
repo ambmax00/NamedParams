@@ -90,7 +90,7 @@ class Test
     KEY((float), 1) paramF;
     KEYOPT((std::string),2) paramS;
 
-    int compute(int _a, int _b, float& _c, std::optional<int> _d)
+    int compute(int _a, int _b, float& _c, std::optional<int> _d) const
     {
       if (_d)
       {
@@ -127,7 +127,7 @@ class Test
       }
     }
 
-    KEYGEN buildWrapper = KeyGenClass(&Test::build, paramI, paramF, paramS);
+    KEYFUNCTION buildWrapper = NamedParams::KeyFunction(&Test::build, paramI, paramF, paramS);
 
 };
 

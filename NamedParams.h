@@ -2,10 +2,12 @@
 #define NAMED_PARAMS_H
 
 #include <array>
-#include <functional>
+#include <cstdint>
 #include <optional>
-#include <stdexcept>
 #include <tuple>
+
+namespace NamedParams 
+{
 
 #ifndef USE_CXX_20
 
@@ -248,8 +250,8 @@ enum class ErrorType
   TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION = 5,
   KEY_HAS_WRONG_TYPE = 6,
   COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE = 7,
-  INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN = 8,
-  SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN = 9
+  INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYFUNCTION = 8,
+  SAME_KEY_PASSED_MORE_THAN_ONCE_KEYFUNCTION = 9
 };
 
 template <ErrorType error, auto... Var>
@@ -258,16 +260,16 @@ constexpr void failWithMessage()
   static_assert((error != ErrorType::MISSING_KEY));
   static_assert((error != ErrorType::INVALID_KEY));
   static_assert((error != ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE));
-  static_assert((error != ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN));
+  static_assert((error != ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYFUNCTION));
   static_assert((error != ErrorType::POSITIONAL_CANNOT_FOLLOW_KEY_ARGUMENT));
   static_assert((error != ErrorType::TOO_MANY_ARGUMENTS_PASSED_TO_FUNCTION));
   static_assert((error != ErrorType::KEY_HAS_WRONG_TYPE));
   static_assert((error != ErrorType::COULD_NOT_CONVERT_KEY_TYPE_TO_ARGUMENT_TYPE));
-  static_assert((error != ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN));
+  static_assert((error != ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYFUNCTION));
 }
 
 /**
- * The Key class allows to define named parameters that are passed to the KeyGenClass object.
+ * The Key class allows to define named parameters that are passed to the KeyFunction object.
  * Keys can be reused from one function to another.
  * Keys in the same function should not have the same UNIQUE_ID, or everything
  * will break down.
@@ -337,6 +339,12 @@ struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraitsBase<R(Args...)>
   typedef C ClassType;
 };
 
+template <class C, class R, typename... Args>
+struct FunctionTraits<R(C::*)(Args...)const> : public FunctionTraitsBase<R(Args...)>
+{
+  typedef C ClassType;
+};
+
 template <class T, bool B>
 struct _RemoveConstIfNotReferenceImpl;
 
@@ -401,11 +409,11 @@ constexpr inline int MultipleIdenticalKeys()
 } 
 
 template <class TFunctionPtr, class... TFunctionKeys>
-constexpr inline bool KeyGenTemplateIsValid() 
+constexpr inline bool KeyFunctionTemplateIsValid() 
 {
   // Check if TFunctionPtr is really a (member) function pointer
   // This is necessary because templates are checked for both constructors
-  // in KeyGenClass, even if only one is enabled. This leads to errors 
+  // in KeyFunction, even if only one is enabled. This leads to errors 
   // in this function. 
   if constexpr (std::is_function<typename std::remove_pointer<TFunctionPtr>::type>::value
     || std::is_member_function_pointer<TFunctionPtr>::value)
@@ -417,7 +425,7 @@ constexpr inline bool KeyGenTemplateIsValid()
     if constexpr (nbFunctionArgs != nbKeys)
     {
       failWithMessage<
-        ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYGEN,
+        ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYFUNCTION,
         nbFunctionArgs,nbKeys>();
       return false;
     }
@@ -435,7 +443,7 @@ constexpr inline bool KeyGenTemplateIsValid()
     constexpr int duplicateKey = MultipleIdenticalKeys<TFunctionKeys...>();
     if constexpr (duplicateKey >= 0)
     {
-      failWithMessage<ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYGEN, duplicateKey>();
+      failWithMessage<ErrorType::SAME_KEY_PASSED_MORE_THAN_ONCE_KEYFUNCTION, duplicateKey>();
       return false;
     }
 
@@ -448,7 +456,7 @@ constexpr inline bool KeyGenTemplateIsValid()
 }
 
 template <class TFunctionPtr, class... TFunctionKeys>
-class KeyGenClass
+class KeyFunction
 {
   private:
 
@@ -469,9 +477,9 @@ class KeyGenClass
     template <class DFunctionPtr, class... DFunctionKeys,
       std::enable_if_t<
         !std::is_member_function_pointer<DFunctionPtr>::value
-        && KeyGenTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
+        && KeyFunctionTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
       , bool> = true>
-    KeyGenClass(DFunctionPtr _function, [[maybe_unused]] const DFunctionKeys&... _keys)
+    KeyFunction(DFunctionPtr _function, [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(nullptr)
       , m_baseFunction(_function)
       , m_nullOpt(new std::nullopt_t(std::nullopt))
@@ -481,9 +489,9 @@ class KeyGenClass
     template <class DFunctionPtr, class... DFunctionKeys, 
       std::enable_if_t<
         std::is_member_function_pointer<DFunctionPtr>::value
-        && KeyGenTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
+        && KeyFunctionTemplateIsValid<DFunctionPtr,DFunctionKeys...>()
       , bool> = true>
-    KeyGenClass(typename KeyFunctionTraits::ClassType* _classPtr, DFunctionPtr _function, 
+    KeyFunction(typename KeyFunctionTraits::ClassType* _classPtr, DFunctionPtr _function, 
       [[maybe_unused]] const DFunctionKeys&... _keys)
       : m_classPtr(_classPtr)
       , m_baseFunction(_function)
@@ -491,12 +499,12 @@ class KeyGenClass
     {
     }
 
-    ~KeyGenClass() 
+    ~KeyFunction() 
     {
       delete m_nullOpt;
     }
 
-    std::function<TFunctionPtr> getBaseFunction() const
+    TFunctionPtr getBaseFunction() const
     {
       return m_baseFunction;
     }
@@ -861,7 +869,7 @@ class KeyGenClass
 
       // potentially unordered local key
       // "local" meaning relative to function keys
-      // e.g. for keys passed to KeyGen (1515, 845, 1233) 
+      // e.g. for keys passed to KeyFunction (1515, 845, 1233) 
       //      keys passed to function (845, 1515) become (1,0)
       constexpr std::array<int64_t,nbPassedArgs> passedLocalKeys = getLocalKeyIDs<Any...>();
 
@@ -960,12 +968,12 @@ class KeyGenClass
 };
 
 template <class DFunctionPtr, class... DFunctionKeys>
-KeyGenClass(DFunctionPtr _function, const DFunctionKeys&... _keys) 
-  -> KeyGenClass<DFunctionPtr,DFunctionKeys...>;
+KeyFunction(DFunctionPtr _function, const DFunctionKeys&... _keys) 
+  -> KeyFunction<DFunctionPtr,DFunctionKeys...>;
 
 template <class DFunctionPtr, class... DFunctionKeys>
-KeyGenClass(typename DFunctionPtr::ClassType _classPtr, DFunctionPtr _function, 
-  const DFunctionKeys&... _keys) -> KeyGenClass<DFunctionPtr,DFunctionKeys...>;
+KeyFunction(typename DFunctionPtr::ClassType _classPtr, DFunctionPtr _function, 
+  const DFunctionKeys&... _keys) -> KeyFunction<DFunctionPtr,DFunctionKeys...>;
 
 #define INT64_T_MAX 9223372036854775807UL
 #define UINT64_T_MAX 18446744073709551615UL
@@ -993,26 +1001,29 @@ constexpr int64_t uniqueID(const char* seed)
 
 }
 
+} // end namespace NamedParams
+
 #define UNPAREN(...) __VA_ARGS__ 
-#define KEY(TYPE, ID) inline static const Key< UNPAREN TYPE , ID > 
-#define KEYOPT(TYPE, ID) inline static const Key<std::optional< UNPAREN TYPE >, ID >
-#define KEYGEN inline static const KeyGenClass
+#define KEY(TYPE, ID) inline static const NamedParams::Key< UNPAREN TYPE , ID > 
+#define KEYOPT(TYPE, ID) inline static const NamedParams::Key<std::optional< UNPAREN TYPE >, ID >
+#define KEYFUNCTION inline static const NamedParams::KeyFunction
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define UNIQUE(name) uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
+#define UNIQUE(name) NamedParams::uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
 
 #define PARAM(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static Key< __VA_ARGS__, UNIQUE(name), _KEY_##name> name;
+  const inline static NamedParams::Key< __VA_ARGS__, UNIQUE(name), _KEY_##name> name;
 
 #define OPTPARAM(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static Key< std::optional< __VA_ARGS__ >, UNIQUE(name), _KEY_##name> name;
+  const inline static NamedParams::Key< std::optional< __VA_ARGS__ >, UNIQUE(name), \
+                                       _KEY_##name> name;
 
 #define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
 #define PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
@@ -1070,8 +1081,8 @@ constexpr int64_t uniqueID(const char* seed)
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static Key<\
-    FunctionTraits<std::remove_pointer<decltype(func)>::type>::arg<nele-i-1>::type,\
+  const inline static NamedParams::Key<\
+    NamedParams::FunctionTraits<std::remove_pointer<decltype(func)>::type>::arg<nele-i-1>::type,\
     UNIQUE(name), _KEY_##name> name; 
 
 #define _DECLTYPE(func, name, i, nele) \
@@ -1082,7 +1093,7 @@ constexpr int64_t uniqueID(const char* seed)
 
 #define CLASS_PARAMETRIZE(functionName, function, list) \
   DECLARE_KEYS(function, list)\
-  KeyGenClass<decltype(function), \
+  NamedParams::KeyFunction<decltype(function), \
     ITERATE_LIST(_DECLTYPE, (,), (), function, list)> \
     functionName;
 
@@ -1092,6 +1103,6 @@ constexpr int64_t uniqueID(const char* seed)
 
 #define PARAMETRIZE(functionName, function, list) \
   DECLARE_KEYS(function, list) \
-  const inline KeyGenClass functionName(function, UNPAREN list);
+  const inline NamedParams::KeyFunction functionName(function, UNPAREN list);
 
 #endif // NAMED_PARAMS_H
