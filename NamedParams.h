@@ -9,11 +9,11 @@
 namespace NamedParams 
 {
 
-#ifndef USE_CXX_20
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// constexpr container algorithms
+/// We need to define our own constexpr swap and sort functions for C++17 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
-  * We need to define our own constexpr swap and sort functions for C++17 
-*/
 template <class T>
 constexpr void _swap(T& _a, T& _b)
 {
@@ -48,6 +48,7 @@ inline constexpr Iterator _partition(Iterator _begin, Iterator _end, Compare _co
   
 }
 
+/// basic constexpr quick sort algorithm for containers with custom compare function
 template <class Iterator, class Compare>
 inline constexpr void _sort(Iterator _begin, Iterator _end, Compare _comp)
 {
@@ -66,6 +67,8 @@ inline constexpr void _sort(Iterator _begin, Iterator _end, Compare _comp)
   return;
 }
 
+
+/// basic constexpr quick sort algorithm for containers
 template <class Iterator>
 inline constexpr void _sort(Iterator _begin, Iterator _end)
 {
@@ -76,6 +79,7 @@ inline constexpr void _sort(Iterator _begin, Iterator _end)
   _sort(_begin, _end, comp);
 }
 
+/// basic constexpr function for finding a value in a container
 template <class Iterator, class T>
 inline constexpr Iterator _find(Iterator _begin, Iterator _end, T _value)
 {
@@ -89,58 +93,47 @@ inline constexpr Iterator _find(Iterator _begin, Iterator _end, T _value)
   return _end;
 }
 
-#else // CXX20
 
-/* Use inbuilt sort function */
+////////////////////////////////////////////////////////////////////////////////////////////////////
+///  Template classes for identifying/deducing types
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <class Iterator, class Comp>
-inline constexpr void _sort(Iterator _begin, Iterator _end, Comp _comp)
-{
-  std::sort(_begin, _end, _comp);
-}
-
-template <class Iterator>
-inline constexpr void _sort(Iterator _begin, Iterator _end)
-{
-  std::sort(_begin, _end);
-}
-
-#endif // CXX20
-
-/**
-  * Define stucts for identifying optional and key
-*/
-
+/// Checks if type is optional
 template <class T>
 struct IsOptional : public std::false_type {};
 
 template <class T>
 struct IsOptional<std::optional<T>> : public std::true_type {};
 
+/// Default enum in Key class if no special name is chosen
 enum DefaultKeyName 
 {
   UNNAMED_KEY
 };
 
-template <class T, int64_t N, auto E = DefaultKeyName::UNNAMED_KEY, 
-  std::enable_if_t<(N >= 0),bool> = true>
+/// Forward declaration for Key class
+template <class T, int64_t N, auto E = DefaultKeyName::UNNAMED_KEY>
 class Key;
 
+/// Checks if class is a key
 template <class T>
 struct IsKey : public std::false_type {};
 
 template <class T, int64_t N, auto E>
 struct IsKey<Key<T,N,E>> : public std::true_type {};
 
-template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool> = true>
+/// Forward declaration for AssignedKey
+template <class TKey>
 class AssignedKey;
 
+/// Checks if class is an assigned key
 template <class T>
 struct IsAssignedKey : public std::false_type {};
 
 template <class T>
 struct IsAssignedKey<AssignedKey<T>> : public std::true_type {};
 
+/// checks if all classes passed to template are Assigned Keys
 template <class... TAssignedKeyPack>
 constexpr inline bool areAllAssignedKeys() 
 {
@@ -160,22 +153,23 @@ constexpr inline bool areAllAssignedKeys()
   return true;
 }
 
-/**
- * AssignedKey is the result of assigning(=) a Key to a value.
- * If the Keytype is a reference, it contains a pointer to the variable 
- * the key was assigned to. If not, it contains a copy of the variable
- */
-template <class TKey, std::enable_if_t<IsKey<TKey>::value,bool>>
+template <class TFunctionPtr, class... TFunctionKeys>
+class KeyFunction;
+
+/// AssignedKey is the result of assigning(=) a Key to a value.
+/// If the Keytype is a reference, it contains a pointer to the variable 
+/// the key was assigned to. If not, it contains a copy of the variable
+template <class TKey>
 class AssignedKey
 {
+  static_assert(IsKey<TKey>::value, "AssignedKey has to have Key as a template class!");
+
   private:
 
     typedef typename std::remove_reference<typename TKey::type>::type NoRefType;
 
     NoRefType* m_pValue;
     int64_t m_keyID;
-
-  public:
 
     AssignedKey() = delete;
 
@@ -216,16 +210,6 @@ class AssignedKey
       return *this;
     }
 
-    ~AssignedKey()
-    {
-      if (m_pValue && !std::is_reference<typename TKey::type>::value) 
-      {
-        delete m_pValue;
-        m_pValue = nullptr;
-      }
-
-    }
-
     NoRefType* getValue() 
     {
       return m_pValue;
@@ -237,6 +221,24 @@ class AssignedKey
     }
 
     typedef TKey keyType;
+
+    template <typename D, int64_t ID, auto Enum>
+    friend class Key;
+
+    template <class TFunctionPtr, class... TFunctionKeys>
+    friend class KeyFunction;
+
+  public:
+
+    ~AssignedKey()
+    {
+      if (m_pValue && !std::is_reference<typename TKey::type>::value) 
+      {
+        delete m_pValue;
+        m_pValue = nullptr;
+      }
+
+    }
 
 };
 
@@ -254,6 +256,8 @@ enum class ErrorType
   SAME_KEY_PASSED_MORE_THAN_ONCE_KEYFUNCTION = 9
 };
 
+/// utility function which outputs some type of message in the compiler output
+/// to get a better understanding of what went wrong
 template <ErrorType error, auto... Var>
 constexpr void failWithMessage()
 {
@@ -268,18 +272,23 @@ constexpr void failWithMessage()
   static_assert((error != ErrorType::INCORRECT_NUMBER_OF_KEYS_PASSED_TO_KEYFUNCTION));
 }
 
-/**
- * The Key class allows to define named parameters that are passed to the KeyFunction object.
- * Keys can be reused from one function to another.
- * Keys in the same function should not have the same UNIQUE_ID, or everything
- * will break down.
- * The Key class does not keep any record of the variable it is assigned to,
- * but delegates the work to AssignedKey.
- */
-template <typename T, int64_t UNIQUE_ID, auto E, std::enable_if_t<(UNIQUE_ID >= 0),bool>> 
+//template <typename T>
+//inline constexpr auto getUniqueTypeIdentifier()
+//{
+//  return std::string_view{__PRETTY_FUNCTION__};
+//}
+
+
+/// The Key class allows to define named parameters that are passed to the KeyFunction object.
+/// Keys can be reused from one function to another.
+/// Keys in the same function should not have the same UNIQUE_ID, or everything
+/// will break down.
+/// The Key class does not keep any record of the variable it is assigned to,
+/// but delegates the work to AssignedKey.
+template <typename T, int64_t UNIQUE_ID, auto E> 
 class Key
 {
-  private:
+  static_assert(UNIQUE_ID >= 0, "Key has to have an ID greater or equal zero!");
 
   public:
     Key() {}
@@ -298,15 +307,13 @@ class Key
 
     static inline const int64_t ID = UNIQUE_ID;
 
-    static auto const name = E;
+    static inline auto const name = E;
 
 };
 
-/**
- * FunctionTraits taken and adapted from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
- * A helper class to get the variable types of a function
- */
 
+/// FunctionTraits taken and adapted from "https://functionalcpp.wordpress.com/2013/08/05/function-traits/"
+/// A helper class to get the variable types of a function
 template <typename T>
 struct FunctionTraitsBase;
 
@@ -366,6 +373,7 @@ struct RemoveConstIfNotReference
   typedef typename _RemoveConstIfNotReferenceImpl<T,!std::is_reference<T>::value>::type type;
 };
 
+/// returns true if argument types to function are all the same as the tyes contained in the keys
 template <class TFunctionPtr, class... TFunctionKeys, size_t... Is>
 constexpr inline int KeyTypesAreValid(std::index_sequence<Is...> const &)
 {
@@ -393,6 +401,7 @@ constexpr inline int KeyTypesAreValid(std::index_sequence<Is...> const &)
 
 }
 
+/// returns the position of the first key with the same ID, else -1
 template <class... TFunctionKeys>
 constexpr inline int MultipleIdenticalKeys()
 {
@@ -408,6 +417,7 @@ constexpr inline int MultipleIdenticalKeys()
   return -1;
 } 
 
+/// groups all functions from above to check if keys are valid for the given function
 template <class TFunctionPtr, class... TFunctionKeys>
 constexpr inline bool KeyFunctionTemplateIsValid() 
 {
@@ -455,6 +465,8 @@ constexpr inline bool KeyFunctionTemplateIsValid()
 
 }
 
+/// KeyFunction is a class which wraps around a (member) function pointer
+/// operator()() lets you call the function using positiionals, named parameters and optionals
 template <class TFunctionPtr, class... TFunctionKeys>
 class KeyFunction
 {
@@ -474,6 +486,7 @@ class KeyFunction
 
   public:
 
+    /// constructor for non-member, or static member functions
     template <class DFunctionPtr, class... DFunctionKeys,
       std::enable_if_t<
         !std::is_member_function_pointer<DFunctionPtr>::value
@@ -486,6 +499,8 @@ class KeyFunction
     {
     }
 
+    /// constructor for non-static member functions which additionally accepts a pointer to 
+    /// an instance of its class
     template <class DFunctionPtr, class... DFunctionKeys, 
       std::enable_if_t<
         std::is_member_function_pointer<DFunctionPtr>::value
@@ -509,6 +524,7 @@ class KeyFunction
       return m_baseFunction;
     }
 
+    /// struct used in constexpr functions which encapsulates some info about the error
     struct EvalReturn
     {
       ErrorType errorType;
@@ -516,6 +532,7 @@ class KeyFunction
       int isFuncID; // wether id refers to TFunctionKeys (0), Any (pos) or None (neg)
     };
 
+    /// reserved negative key IDs to complement the positive "real" key IDs
     enum KeyIdType 
     {
       POSITIONAL = -1,
@@ -559,10 +576,10 @@ class KeyFunction
       return passedLocalKeyIDs;
     }
 
-    // sort the passed arguments according to order of functionKeys
-    // do it here in this function, so we do not need to do it at runtime
-    // returns a sorted array where array[idx] gives the original position of 
-    // the passed argument
+    /// sort the passed arguments according to order of functionKeys
+    /// do it here in this function, so we do not need to do it at runtime
+    /// returns a sorted array where array[idx] gives the original position of 
+    /// the passed argument
     template <class... Any>
     constexpr inline static std::array<int64_t,sizeof...(Any)> getSortedIndices(
       const std::array<int64_t,sizeof...(Any)>& localKeyIDs)
@@ -584,6 +601,7 @@ class KeyFunction
 
     }
 
+    /// returns a pair containing the number of positionals and named arguments
     template <class... Any>
     constexpr inline static std::pair<int,int> getNb() 
     {
@@ -609,6 +627,8 @@ class KeyFunction
 
     }
 
+    /// struct to get the ID of a passed argument
+    /// if D is a non-Key, it is a positional
     template <class D>
     struct GetArgumentID 
     {
@@ -621,8 +641,10 @@ class KeyFunction
       const inline static int64_t ID = AssignedKey<D>::keyType::ID;
     };
 
+    /// checks if the positional type can be converted to the type needed by the function
     template <class... Any, size_t... Is>
-    constexpr inline static std::array<bool,sizeof...(Is)> positionalConversion(std::index_sequence<Is...> const &) 
+    constexpr inline static std::array<bool,sizeof...(Is)> 
+    positionalConversion(std::index_sequence<Is...> const &) 
     {
       constexpr std::array<bool,sizeof...(Is)> out = 
       { 
@@ -632,11 +654,14 @@ class KeyFunction
         >::value...
       };
 
-      // BETTER ERROR HANDLING: SHOW WHICH TYPES CANNOT BE CONVERTED
+      // TODO: BETTER ERROR HANDLING: SHOW WHICH TYPES CANNOT BE CONVERTED
 
       return out;
     }
     
+    /// this function is used to evaluate the template parameters for operator()
+    /// that is: correct order, correct type, missing keys, invalid keys, duplicate keys...
+    /// returns an error containing some info depending on the context
     template <class... Any>
     constexpr inline static EvalReturn evalAny()
     {
@@ -786,6 +811,8 @@ class KeyFunction
     
     }
     
+    /// Encapsulates evalAny() and handes the error
+    /// returns true if class... Any is compatible with the function
     template <class... Any>
     constexpr inline static bool evalAnyError()
     {
@@ -828,36 +855,46 @@ class KeyFunction
       return true;
     }
     
+    /// call to the internal function pointer using positionals and named parameters
+    /// fails at compile time if passed arguments are invalid
     template <class... Any, std::enable_if_t<evalAnyError<Any...>(), int> = 0>
     inline typename KeyFunctionTraits::ResultType operator()(Any&&... _args) const 
     {
       return internal3<Any...>(std::forward<Any>(_args)..., std::make_index_sequence<sizeof...(TFunctionKeys)>{});
     }
 
+    /// return internal address in assigned key
     template <typename T, std::enable_if_t<IsAssignedKey<T>::value,bool> = true>
     inline void* getAddress(T& _assignedKey) const
     {
       return (void*)_assignedKey.getValue();
     }
 
+    /// return address of passed value
     template <typename T, std::enable_if_t<!IsAssignedKey<T>::value,int> = 0>
     inline void* getAddress(T& _value) const
     {
       return (void*)&_value;
     }
 
+    /// utility struct to get the type nr. Idx in the function
+    /// if the key is absent, the type defaults to nullopt_t
     template <int Idx, int KeyID>
     struct ConvertToType
     {
       using type = typename KeyFunctionTraits::template arg<Idx>::type;
     };
 
+    /// utility struct to get the type nr. Idx in the function
+    /// if the key is absent, the type defaults to nullopt_t
     template <int Idx>
     struct ConvertToType<Idx,KeyIdType::ABSENT>
     {
       using type = std::nullopt_t;
     };
 
+    /// process arguments passed to operator()
+    /// reorders the arguments to pass it to the internal function and fills absent fields with nullopts
     template <class... Any, size_t... Is>
     typename KeyFunctionTraits::ResultType internal3(Any&&... _args, std::index_sequence<Is...> const &) const
     {
@@ -978,6 +1015,7 @@ KeyFunction(typename DFunctionPtr::ClassType _classPtr, DFunctionPtr _function,
 #define INT64_T_MAX 9223372036854775807UL
 #define UINT64_T_MAX 18446744073709551615UL
 
+/// utilty function to generate an int64 ID from some characters
 constexpr int64_t uniqueID(const char* seed)
 {
   uint64_t num = 0;
@@ -1002,6 +1040,10 @@ constexpr int64_t uniqueID(const char* seed)
 }
 
 } // end namespace NamedParams
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+///                                       MACRO MAGIC
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define UNPAREN(...) __VA_ARGS__ 
 #define KEY(TYPE, ID) inline static const NamedParams::Key< UNPAREN TYPE , ID > 
@@ -1098,8 +1140,7 @@ constexpr int64_t uniqueID(const char* seed)
     functionName;
 
 #define INIT_CLASS_FUNCTION(functionName, function, list) \
-  functionName(this, function, \
-    ITERATE_LIST(_ECHO, (,), (), function, list))
+  functionName(this, function, UNPAREN list)
 
 #define PARAMETRIZE(functionName, function, list) \
   DECLARE_KEYS(function, list) \
