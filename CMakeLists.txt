@@ -12,6 +12,8 @@ add_compile_options(-Wall -Wextra -pedantic)
 
 add_executable(TestNamedParamsExe test/TestNamedParams.cpp)
 
+add_executable(Example1 Examples/example1.cpp)
+
 add_test(
   NAME TestNamedParams        
   COMMAND ${CMAKE_BINARY_DIR}/TestNamedParamsExe 3)
