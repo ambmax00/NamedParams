@@ -67,7 +67,7 @@ calculateWavefuncton(Parameters{
 
 using named initializers.
 
-However, apart from forcing every required parameter in the struct to be initialized as a reference, there is no direct way to have a compile-time checking of required vs optional parameters. You have to do the check at compile-time. You might omit ```.basis``` or ```.method```, without the compiler minding at all. Also, all members need to be in the correct order.
+However, apart from forcing every required parameter in the struct to be initialized as a reference, there is no direct way to have a compile-time checking of required vs optional parameters. You have to do the check at run-time. You might omit ```.basis``` or ```.method```, without the compiler minding at all. Also, all members need to be in the correct order.
 
 In that context, I always liked the way Fortran or Python handle it. We can differentiate between positionals and named parameters. With a feature like that, we could pass the arguments like
 
