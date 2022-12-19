@@ -1045,105 +1045,175 @@ constexpr int64_t uniqueID(const char* seed)
 ///                                       MACRO MAGIC
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define UNPAREN(...) __VA_ARGS__ 
-#define KEY(TYPE, ID) inline static const NamedParams::Key< UNPAREN TYPE , ID > 
-#define KEYOPT(TYPE, ID) inline static const NamedParams::Key<std::optional< UNPAREN TYPE >, ID >
-#define KEYFUNCTION inline static const NamedParams::KeyFunction
+#define _NAMEDPARAMS_UNPAREN(...) __VA_ARGS__ 
+#define NAMEDPARAMS_KEY(TYPE, ID) \
+  inline static const NamedParams::Key< _NAMEDPARAMS_UNPAREN TYPE , ID > 
+#define NAMEDPARAMS_KEYOPT(TYPE, ID) \
+  inline static const NamedParams::Key<std::optional< _NAMEDPARAMS_UNPAREN TYPE >, ID >
+#define NAMEDPARAMS_KEYFUNCTION \
+  inline static const NamedParams::KeyFunction
 
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#define UNIQUE(name) NamedParams::uniqueID(#name TOSTRING(__LINE__) __TIME__ __DATE__)
+#define _NAMEDPARAMS_STRINGIFY(x) #x
+#define _NAMEDPARAMS_TOSTRING(x) _NAMEDPARAMS_STRINGIFY(x)
+#define NAMEDPARAMS_UNIQUE(name) \
+  NamedParams::uniqueID(#name _NAMEDPARAMS_TOSTRING(__LINE__) __TIME__ __DATE__)
 
-#define PARAM(name, ...) \
+#define NAMEDPARAMS_PARAM(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static NamedParams::Key< __VA_ARGS__, UNIQUE(name), _KEY_##name> name;
+  const inline static NamedParams::Key< __VA_ARGS__, NAMEDPARAMS_UNIQUE(name), _KEY_##name> name;
 
-#define OPTPARAM(name, ...) \
+#define NAMEDPARAMS_OPTPARAM(name, ...) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
-  const inline static NamedParams::Key< std::optional< __VA_ARGS__ >, UNIQUE(name), \
+  const inline static NamedParams::Key< std::optional< __VA_ARGS__ >, NAMEDPARAMS_UNIQUE(name), \
                                        _KEY_##name> name;
 
-#define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
-#define PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
+#define _NAMEDPARAMS_CAT(a, ...) _NAMEDPARAMS_PRIMITIVE_CAT(a, __VA_ARGS__)
+#define _NAMEDPARAMS_PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
 
-#define PASTE(x, ...) x##__VA_ARGS__
-#define EVALUATING_PASTE(x, ...) PASTE(x, __VA_ARGS__)
-#define UNPAREN_IF(x) EVALUATING_PASTE(NOTHING_, EXTRACT x)
+#define _NAMEDPARAMS_PASTE(x, ...) x##__VA_ARGS__
+#define _NAMEDPARAMS_EVALUATING_PASTE(x, ...) _NAMEDPARAMS_PASTE(x, __VA_ARGS__)
+#define _NAMEDPARAMS_UNPAREN_IF(x) _NAMEDPARAMS_EVALUATING_PASTE(NOTHING_, EXTRACT x)
 
-#define UNPAREN(...) __VA_ARGS__
-#define WRAP(FUNC, ...)
+#define _NAMEDPARAMS_WRAP(FUNC, ...)
 
-#define NARGS_SEQ(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, N, ...) N
-#define NARGS(...) NARGS_SEQ(0, __VA_ARGS__,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
+#define _NAMEDPARAMS_NARGS_SEQ(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, N, ...) N
+#define _NAMEDPARAMS_NARGS(...) \
+  _NAMEDPARAMS_NARGS_SEQ(0, __VA_ARGS__,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
 
-#define ITERATE_LIST(FUNC, DELIM, SUFFIX, constant, list) ITERATE(FUNC, DELIM, SUFFIX, constant, UNPAREN list)
-#define ITERATE(FUNC, DELIM, SUFFIX, constant, ...) CAT(_ITERATE_, NARGS(__VA_ARGS__))(FUNC, NARGS(__VA_ARGS__), DELIM, SUFFIX, constant, __VA_ARGS__)
-#define _ITERATE_0(FUNC, NELE, DELIM, SUFFIX, constant, x) 
-#define _ITERATE_1(FUNC, NELE, DELIM, SUFFIX, constant, x) FUNC(constant, x, 0, NELE) UNPAREN SUFFIX
-#define _ITERATE_2(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,1, NELE) UNPAREN DELIM _ITERATE_1(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_3(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,2, NELE) UNPAREN DELIM _ITERATE_2(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_4(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,3, NELE) UNPAREN DELIM _ITERATE_3(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_5(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,4, NELE) UNPAREN DELIM _ITERATE_4(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_6(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,5, NELE) UNPAREN DELIM _ITERATE_5(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_7(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,6, NELE) UNPAREN DELIM _ITERATE_6(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_8(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,7, NELE) UNPAREN DELIM _ITERATE_7(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_9(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,8, NELE) UNPAREN DELIM _ITERATE_8(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_10(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,9, NELE) UNPAREN DELIM _ITERATE_9(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_11(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,10, NELE) UNPAREN DELIM _ITERATE_10(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_12(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,11, NELE) UNPAREN DELIM _ITERATE_11(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_13(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,12, NELE) UNPAREN DELIM _ITERATE_12(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_14(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,13, NELE) UNPAREN DELIM _ITERATE_13(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_15(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,14, NELE) UNPAREN DELIM _ITERATE_14(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_16(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,15, NELE) UNPAREN DELIM _ITERATE_15(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_17(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,16, NELE) UNPAREN DELIM _ITERATE_16(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_18(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,17, NELE) UNPAREN DELIM _ITERATE_17(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_19(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,18, NELE) UNPAREN DELIM _ITERATE_18(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_20(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,19, NELE) UNPAREN DELIM _ITERATE_19(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_21(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,20, NELE) UNPAREN DELIM _ITERATE_20(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_22(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,21, NELE) UNPAREN DELIM _ITERATE_21(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_23(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,22, NELE) UNPAREN DELIM _ITERATE_22(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_24(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,23, NELE) UNPAREN DELIM _ITERATE_23(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_25(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,24, NELE) UNPAREN DELIM _ITERATE_24(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_26(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,25, NELE) UNPAREN DELIM _ITERATE_25(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_27(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,26, NELE) UNPAREN DELIM _ITERATE_26(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_28(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,27, NELE) UNPAREN DELIM _ITERATE_27(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_29(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,28, NELE) UNPAREN DELIM _ITERATE_28(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_30(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,29, NELE) UNPAREN DELIM _ITERATE_29(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,30, NELE) UNPAREN DELIM _ITERATE_30(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
-#define _ITERATE_32(FUNC, NELE, DELIM, SUFFIX, function, x, ...) FUNC(function, x,31, NELE) UNPAREN DELIM _ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
 
-#define _ECHO(func, name, i, nele) \
+#define _NAMEDPARAMS_ITERATE_LIST(FUNC, DELIM, SUFFIX, constant, list) \
+  _NAMEDPARAMS_ITERATE(FUNC, DELIM, SUFFIX, constant, _NAMEDPARAMS_UNPAREN list)
+#define _NAMEDPARAMS_ITERATE(FUNC, DELIM, SUFFIX, constant, ...) \
+  _NAMEDPARAMS_CAT(_NAMEDPARAMS_ITERATE_, _NAMEDPARAMS_NARGS(__VA_ARGS__))(FUNC, _NAMEDPARAMS_NARGS(__VA_ARGS__), DELIM, SUFFIX, constant, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_0(FUNC, NELE, DELIM, SUFFIX, constant, x) 
+#define _NAMEDPARAMS_ITERATE_1(FUNC, NELE, DELIM, SUFFIX, constant, x) \
+  FUNC(constant, x, 0, NELE) _NAMEDPARAMS_UNPAREN SUFFIX
+#define _NAMEDPARAMS_ITERATE_2(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,1, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_1(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_3(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,2, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_2(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_4(FUNC, NELE, DELIM, SUFFIX, function, x, ...)\
+  FUNC(function, x,3, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_3(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_5(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,4, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_4(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_6(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,5, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_5(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_7(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,6, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_6(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_8(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,7, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_7(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_9(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,8, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_8(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_10(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,9, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_9(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_11(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,10, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_10(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_12(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,11, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_11(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_13(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,12, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_12(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_14(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,13, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_13(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_15(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,14, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_14(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_16(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,15, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_15(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_17(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,16, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_16(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_18(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,17, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_17(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_19(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,18, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_18(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_20(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,19, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_19(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_21(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,20, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_20(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_22(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,21, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_21(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_23(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,22, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_22(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_24(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,23, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_23(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_25(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,24, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_24(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_26(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,25, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_25(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_27(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,26, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_26(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_28(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,27, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_27(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_29(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,28, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_28(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_30(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,29, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_29(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,30, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_30(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+#define _NAMEDPARAMS_ITERATE_32(FUNC, NELE, DELIM, SUFFIX, function, x, ...) \
+  FUNC(function, x,31, NELE) _NAMEDPARAMS_UNPAREN DELIM \
+  _NAMEDPARAMS_ITERATE_31(FUNC, NELE, DELIM, SUFFIX, function, __VA_ARGS__)
+
+#define _NAMEDPARAMS_ECHO(func, name, i, nele) \
   name
 
-#define _GEN_KEY(func, name, i, nele) \
+#define _NAMEDPARAMS_GEN_KEY(func, name, i, nele) \
   enum _ENUM_##name {     \
     _KEY_##name           \
   };                      \
   const inline static NamedParams::Key<\
     NamedParams::FunctionTraits<std::remove_pointer<decltype(func)>::type>::arg<nele-i-1>::type,\
-    UNIQUE(name), _KEY_##name> name; 
+    NAMEDPARAMS_UNIQUE(name), _KEY_##name> name; 
 
-#define _DECLTYPE(func, name, i, nele) \
+#define _NAMEDPARAMS_DECLTYPE(func, name, i, nele) \
   decltype(name)
 
-#define DECLARE_KEYS(func, list) \
-  ITERATE_LIST(_GEN_KEY, (), (), func, list) 
+#define NAMEDPARAMS_DECLARE_KEYS(func, list) \
+  _NAMEDPARAMS_ITERATE_LIST(_NAMEDPARAMS_GEN_KEY, (), (), func, list) 
 
-#define CLASS_PARAMETRIZE(functionName, function, list) \
-  DECLARE_KEYS(function, list)\
+#define NAMEDPARAMS_CLASS_PARAMETRIZE(functionName, function, list) \
+  NAMEDPARAMS_DECLARE_KEYS(function, list)\
   NamedParams::KeyFunction<decltype(function), \
-    ITERATE_LIST(_DECLTYPE, (,), (), function, list)> \
+    _NAMEDPARAMS_ITERATE_LIST(_NAMEDPARAMS_DECLTYPE, (,), (), function, list)> \
     functionName;
 
-#define INIT_CLASS_FUNCTION(functionName, function, list) \
-  functionName(this, function, UNPAREN list)
+#define NAMEDPARAMS_INIT_CLASS_FUNCTION(functionName, function, list) \
+  functionName(this, function, _NAMEDPARAMS_UNPAREN list)
 
-#define PARAMETRIZE(functionName, function, list) \
-  DECLARE_KEYS(function, list) \
-  const inline NamedParams::KeyFunction functionName(function, UNPAREN list);
+#define NAMEDPARAMS_PARAMETRIZE(functionName, function, list) \
+  NAMEDPARAMS_DECLARE_KEYS(function, list) \
+  const inline NamedParams::KeyFunction functionName(function, _NAMEDPARAMS_UNPAREN list);
 
 #endif // NAMED_PARAMS_H

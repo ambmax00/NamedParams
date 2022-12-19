@@ -6,9 +6,9 @@ int func_base(int a, float& b, double c, std::optional<int> d, std::optional<std
 }
 
 #define VARS (keyA, keyB, keyC, keyD, keyE)
-PARAMETRIZE(func, &func_base, VARS)
+NAMEDPARAMS_PARAMETRIZE(func, &func_base, VARS)
 
-PARAM(keyINVALID, int);
+NAMEDPARAMS_PARAM(keyINVALID, int);
   
 int main() 
 {

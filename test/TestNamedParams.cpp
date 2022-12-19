@@ -25,7 +25,7 @@ std::string word(char _a, char _b, char _c, char _d)
 }
 
 #define WORD_VARS (char0, char1, char2, char3)
-PARAMETRIZE(np_word, &word, WORD_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_word, &word, WORD_VARS)
 
 // function for testing reference passing
 void concat(std::string& _str0, std::string& _str1)
@@ -34,7 +34,7 @@ void concat(std::string& _str0, std::string& _str1)
 }
 
 #define CONCAT_VARS (str0, str1)
-PARAMETRIZE(np_concat, &concat, CONCAT_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_concat, &concat, CONCAT_VARS)
 
 // function for testing optional params
 int sum(int _a, const int _b, std::optional<int> _c, std::optional<int> _d, std::optional<int> _e) 
@@ -43,7 +43,7 @@ int sum(int _a, const int _b, std::optional<int> _c, std::optional<int> _d, std:
 }
 
 #define SUM_VARS (keyA, keyB, keyC, keyD, keyE)
-PARAMETRIZE(np_sum, &sum, SUM_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_sum, &sum, SUM_VARS)
 
 int sumPointer(int* p0, int const* p1, const int* p2)
 {
@@ -51,7 +51,7 @@ int sumPointer(int* p0, int const* p1, const int* p2)
 }
 
 #define SUM_POINTER_VARS (keyP0, keyP1, keyP2)
-PARAMETRIZE(np_sumPointer, &sumPointer, SUM_POINTER_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_sumPointer, &sumPointer, SUM_POINTER_VARS)
 
 int singleArgument(std::optional<int> _i)
 {
@@ -59,7 +59,7 @@ int singleArgument(std::optional<int> _i)
 }
 
 #define SINGLE_ARGUMENT_VARS (single)
-PARAMETRIZE(np_singleArgument, &singleArgument, SINGLE_ARGUMENT_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_singleArgument, &singleArgument, SINGLE_ARGUMENT_VARS)
 
 class Uncopyable
 {
@@ -75,7 +75,7 @@ int processUncopyable([[maybe_unused]]Uncopyable& _ucopy)
 }
 
 #define UNCOPYABLE_VARS (pcopy)
-PARAMETRIZE(np_processUncopyable, &processUncopyable, UNCOPYABLE_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_processUncopyable, &processUncopyable, UNCOPYABLE_VARS)
 
 
 class Test
@@ -86,9 +86,9 @@ class Test
     float m_float;
     std::string m_str;
 
-    KEY((int), 0) paramI;
-    KEY((float), 1) paramF;
-    KEYOPT((std::string),2) paramS;
+    NAMEDPARAMS_KEY((int), 0) paramI;
+    NAMEDPARAMS_KEY((float), 1) paramF;
+    NAMEDPARAMS_KEYOPT((std::string),2) paramS;
 
     int compute(int _a, int _b, float& _c, std::optional<int> _d) const
     {
@@ -105,13 +105,13 @@ class Test
     }
 
     #define COMPUTE_LIST (paramA, paramB, paramC, paramD)
-    CLASS_PARAMETRIZE(np_compute, &Test::compute, COMPUTE_LIST)
+    NAMEDPARAMS_CLASS_PARAMETRIZE(np_compute, &Test::compute, COMPUTE_LIST)
 
     Test(int _i, float _f, std::string _s) 
       : m_int(_i)
       , m_float(_f)
       , m_str(_s)
-      , INIT_CLASS_FUNCTION(np_compute, &Test::compute, COMPUTE_LIST)
+      , NAMEDPARAMS_INIT_CLASS_FUNCTION(np_compute, &Test::compute, COMPUTE_LIST)
     {
     }
   
@@ -127,7 +127,7 @@ class Test
       }
     }
 
-    KEYFUNCTION buildWrapper = NamedParams::KeyFunction(&Test::build, paramI, paramF, paramS);
+    NAMEDPARAMS_KEYFUNCTION buildWrapper = NamedParams::KeyFunction(&Test::build, paramI, paramF, paramS);
 
 };
 
@@ -158,7 +158,7 @@ int manyArgs(int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7, int
                         keyI10, keyI11, keyI12, keyI13, keyI14, keyI15, keyI16, keyI17, keyI18,\
                         keyI19)
 
-PARAMETRIZE(np_manyArgs, &manyArgs, MANY_ARGS_VARS)
+NAMEDPARAMS_PARAMETRIZE(np_manyArgs, &manyArgs, MANY_ARGS_VARS)
 
 int main()
 {

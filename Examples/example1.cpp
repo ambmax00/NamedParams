@@ -34,14 +34,34 @@ void doWayTooMuchInOneFunction(Wavefunctiom* _wavefunction,
                                std::optional<double> _orthoDiis
                                )
 {
-  // do a lot ...
+  // do stuff ...
+
+  // shut up compiler warnings...
+  (void)_wavefunction;
+  (void)_atoms;
+  (void)_basis;
+  (void)_method;
+  (void)_dfBasis;
+  (void)_jMethod;
+  (void)_kMethod;
+  (void)_eris;
+  (void)_threshold;
+  (void)_doDiis;
+  (void)_doLocal;
+  (void)_scfMaxIter;
+  (void)_diisMaxIter;
+  (void)_nbBatches;
+  (void)_guess;
+  (void)_diagThreshold;
+  (void)_scaling;
+  (void)_orthoDiis;
 }
 
 #define VARS (kWaveFunction, kAtoms, kBasis, kMethod, kDfBasis, kJMethod, kKMethod, kEris, \
               kThreshold, kDoDiis, kDoLocal, kScfMaxIter, kDiisMaxIter, kNbBatches, kGuess, \
               kDiagThreshold, kScaling, kOrthoDiis)
 
-PARAMETRIZE(namedFunction, &doWayTooMuchInOneFunction, VARS)
+NAMEDPARAMS_PARAMETRIZE(namedFunction, &doWayTooMuchInOneFunction, VARS)
 
 int main()
 {
@@ -49,6 +69,7 @@ int main()
   std::vector<Atom> atoms;
   Basis basis;
 
-  namedFunction(&wFunction, atoms, basis, 0, kJMethod = "full", kOrthoDiis = 1e-6, kDoDiis = true);
+  namedFunction(kWaveFunction = &wFunction, kBasis = basis, kMethod = 0, kJMethod = "full", 
+                kAtoms = atoms, kOrthoDiis = 1e-6, kDoDiis = true);
 
 }
